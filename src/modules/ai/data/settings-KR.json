@@ -1,0 +1,168 @@
+{
+  "language": "KR",
+  "modelConfig": {
+    "modelName": "gemini-2.5-pro",
+    "apiVersion": "v1",
+    "modelUrl": "",
+    "useDirectUrl": false
+  },
+  "generationConfig": {
+    "temperature": 0.7,
+    "topK": 60,
+    "topP": 0.6,
+    "maxOutputTokens": 30264
+  },
+  "templateConfig": {
+    "conversation": {
+      "personality": "당신은 홍타이푸드패키징 주식회사에서 30년 이상의 경험을 가진 종이 포장 전문가 홍 씨입니다.",
+      "greeting": "안녕하세요! 홍입니다. 포장 솔루션에 대한 상담을 도와드리겠습니다 🙂",
+      "closing": "추가 질문이 있으시면 언제든지 문의해 주세요 😊",
+      "guidelines": [
+        "질문에 직접적이고 명확하게 답변하기",
+        "유용하고 포괄적인 정보 제공하기",
+        "고객 요구에 맞는 적합한 제품 추천하기",
+        "항상 주문 수량에 따른 가격대와 맞춤 생산 가격 제공하기",
+        "항상 제품 URL 포함하기"
+      ]
+    }
+  },
+  "costConfig": {
+    "rates": {
+      "input": {
+        "normal": 1.25,
+        "long": 2.5
+      },
+      "output": {
+        "normal": 5,
+        "long": 10
+      },
+      "caching": {
+        "normal": 0.3125,
+        "long": 0.625
+      }
+    },
+    "longPromptThreshold": 12120000
+  },
+  "languageDetectionConfig": {
+    "thai": {
+      "minTextLength": 1,
+      "minCharacters": 1,
+      "confidenceThreshold": 0.3,
+      "characterWeight": 2,
+      "alwaysDetectIfPresent": true,
+      "fallbackPriority": true
+    },
+    "english": {
+      "minWords": 15,
+      "minTextLength": 50,
+      "confidenceThreshold": 0.6,
+      "thaiRatioThreshold": 0.6,
+      "wordRatioThreshold": 0.7,
+      "englishWordsRatio": 0.5,
+      "businessWordBonus": 0.2
+    },
+    "otherLanguages": {
+      "minTextLength": 20,
+      "confidenceThreshold": 0.7,
+      "cldRequiredConfidence": 0.8
+    },
+    "cacheTimeout": 5000,
+    "lockAfterFirstDetection": true,
+    "preferThaiLanguage": true,
+    "fallbackToThai": true,
+    "useCLD": true,
+    "cldMinLength": 10,
+    "cldConfidenceThreshold": 0.6,
+    "cldLanguageMap": {
+      "THAI": "TH",
+      "ENGLISH": "EN",
+      "CHINESE": "CN",
+      "CHINESE_SIMPLIFIED": "CN",
+      "CHINESE_TRADITIONAL": "CN",
+      "JAPANESE": "JP",
+      "KOREAN": "KR"
+    }
+  },
+  "unifiedFormatterConfig": {
+    "enabled": true,
+    "sections": {
+      "knowledgeContext": {
+        "enabled": true,
+        "order": 1,
+        "title": {
+          "TH": "ความรู้ที่เกี่ยวข้อง",
+          "EN": "Relevant Knowledge",
+          "JP": "関連する知識",
+          "CN": "相关知识",
+          "KR": "관련 지식"
+        },
+        "maxResults": 1,
+        "scoreThreshold": 0.55,
+        "includeConfidence": true,
+        "summarizeContent": true,
+        "maxContentLength": 500000,
+        "groupByCategory": true
+      },
+      "productContext": {
+        "enabled": true,
+        "order": 2,
+        "title": {
+          "TH": "ข้อมูลสินค้าที่เกี่ยวข้อง",
+          "EN": "Relevant Product Information",
+          "JP": "関連製品情報",
+          "CN": "相关产品信息",
+          "KR": "관련 제품 정보"
+        },
+        "useProductFormatter": true,
+        "enhanceWithKnowledge": true
+      },
+      "contextIntegration": {
+        "enabled": true,
+        "crossReference": true,
+        "prioritizeKnowledge": false,
+        "combineRelatedContent": true
+      }
+    },
+    "formatting": {
+      "separators": {
+        "section": "\n\n---\n\n",
+        "subsection": "\n\n",
+        "item": "\n"
+      },
+      "indentation": {
+        "level1": "",
+        "level2": "  • ",
+        "level3": "    ◦ "
+      },
+      "confidenceDisplay": {
+        "enabled": true,
+        "format": "(ความเชื่อมั่น: {confidence}%)",
+        "threshold": 0.5
+      }
+    }
+  },
+  "knowledgeConfig": {
+    "enabled": true,
+    "searchSettings": {
+      "topK": 5,
+      "scoreThreshold": 0.25,
+      "maxContentLength": 200000,
+      "maxTokens": 80000,
+      "includeMetadata": true,
+      "sortBy": "relevance"
+    },
+    "formatting": {
+      "maxPreviewLength": 300000,
+      "includeSource": true,
+      "includeConfidence": true,
+      "groupByCategory": true
+    },
+    "integration": {
+      "withProducts": true,
+      "enhanceProductData": true,
+      "crossReference": true
+    }
+  },
+  "createdAt": "2025-10-04T04:55:52.001Z",
+  "lastUpdated": "2025-10-04T04:55:52.004Z"
+}

@@ -1,0 +1,464 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Product {
+  id                String   @id @default(uuid())
+
+  // ข้อมูลพื้นฐาน
+  product_name      String
+  sku               String?  @unique
+  url               String?
+
+  // รายละเอียดสินค้า
+  category          String?
+  price             String?
+  stock_quantity    Int?
+  unit              String?  
+  short_description String?
+  description       String?  
+
+
+  details           String?  
+  specifications    String? 
+
+  // Metadata
+  manual            Boolean  @default(false)
+  created_at        DateTime @default(now())
+  last_updated      DateTime @updatedAt
+
+  // Relations
+  images            ProductImage[]
+  priceTiers        PriceTier[]
+
+  @@index([category])
+  @@index([product_name])
+}
+
+
+model ProductImage {
+  id            String   @id @default(uuid())
+  product_id    String
+
+  url           String
+  localPath     String?
+  filename      String?
+  alt           String?
+  title         String?
+
+  order         Int      @default(0)
+  isPrimary     Boolean  @default(false)
+  size          Int?
+  contentType   String?
+
+  created_at    DateTime @default(now())
+
+  product       Product  @relation(fields: [product_id], references: [id], onDelete: Cascade)
+
+  @@index([product_id])
+}
+
+// Price Tier Model - ราคาขั้นบันได (ถ้ามี)
+model PriceTier {
+  id              String   @id @default(uuid())
+  product_id      String
+
+  // ข้อมูลราคาขั้นบันได
+  min_quantity    Int      // จำนวนขั้นต่ำ
+  max_quantity    Int?     // จำนวนสูงสุด (null = ไม่จำกัด)
+  price           Float    // ราคาต่อหน่วย
+
+  // Metadata
+  created_at      DateTime @default(now())
+  last_updated    DateTime @updatedAt
+
+  product         Product  @relation(fields: [product_id], references: [id], onDelete: Cascade)
+
+  @@index([product_id])
+  @@index([min_quantity])
+}
+
+
+model User {
+  id              String   @id @default(uuid())
+  userId          String   @unique // LINE user ID หรือ ID อื่นๆ
+  displayName     String?
+  pictureUrl      String?
+  email           String?
+  phone           String?
+
+  created_at      DateTime @default(now())
+  last_updated    DateTime @updatedAt
+
+  chatMessages    ChatMessage[]
+
+}
+
+model ChatMessage {
+  id              String   @id @default(uuid())
+  userId          String
+
+  // ข้อมูลข้อความ
+  role            String   // user, assistant, system
+  content         String
+  imageUrl        String?
+
+  // Metadata
+  metadata        String?  // JSON string
+  timestamp       DateTime @default(now())
+
+  user            User     @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([timestamp])
+}
+
+
+model Keyword {
+  id              String   @id @default(uuid())
+  keyword         String   @unique
+  description     String?
+  enabled         Boolean  @default(true)
+
+  created_at      DateTime @default(now())
+  last_updated    DateTime @updatedAt
+
+  images          KeywordImage[]
+
+}
+
+model KeywordImage {
+  id              String   @id @default(uuid())
+  keyword_id      String
+  imageUrl        String
+  altText         String?
+  order           Int      @default(0)
+
+  created_at      DateTime @default(now())
+
+  keyword         Keyword  @relation(fields: [keyword_id], references: [id], onDelete: Cascade)
+
+  @@index([keyword_id])
+}
+
+
+model Knowledge {
+  id              String   @id @default(uuid())
+  title           String
+  content         String
+  category        String?
+  tags            String?  // JSON array
+  enabled         Boolean  @default(true)
+
+  created_at      DateTime @default(now())
+  last_updated    DateTime @updatedAt
+
+  @@index([category])
+  @@index([title])
+}
+
+
+
+model Setting {
+  id              String   @id @default(uuid())
+  key             String   @unique
+  value           String   // JSON string
+  description     String?
+
+  created_at      DateTime @default(now())
+  last_updated    DateTime @updatedAt
+
+}
+
+// Message Template Model - เทมเพลตข้อความ
+model MessageTemplate {
+  id              String   @id @default(uuid())
+  name            String   @unique
+  template        String   // JSON string
+  category        String?
+  enabled         Boolean  @default(true)
+
+  created_at      DateTime @default(now())
+  last_updated    DateTime @updatedAt
+
+  @@index([category])
+}
+
+// ========== Chat History Models ==========
+
+model ChatHistoryAI {
+  id              String   @id @default(uuid())
+  userId          String
+
+  role            String   // user, model, assistant
+  content         String
+  messageId       String?  // unique message ID
+
+  products        String?  // JSON array of products
+  senderProfile   String?  // JSON object
+  source          String?
+
+  // Token usage
+  inputTokens     Int?
+  outputTokens    Int?
+  totalTokens     Int?
+
+  // Timestamps
+  timestamp       BigInt   // Unix timestamp in milliseconds
+  saved_at        BigInt?  // Unix timestamp in milliseconds
+
+  @@index([userId])
+  @@index([messageId])
+  @@index([timestamp])
+}
+
+model ChatHistoryAPI {
+  id              String   @id @default(uuid())
+  userId          String
+  messageId       String?  @unique // LINE message ID
+
+  // ข้อมูลข้อความ
+  role            String   // user, assistant
+  content         String?
+
+  // ข้อมูลเพิ่มเติม
+  products        String?  // JSON array
+  senderProfile   String?  // JSON: { displayName, pictureUrl }
+  source          String?
+
+  // Token usage
+  inputTokens     Int?
+  outputTokens    Int?
+  totalTokens     Int?
+
+  // Timestamps
+  timestamp       BigInt   // Unix timestamp in milliseconds
+  saved_at        BigInt?  // Unix timestamp in milliseconds
+
+  @@index([userId])
+  @@index([timestamp])
+}
+
+// ========== Product History Model ==========
+
+// Product History Model - ประวัติการโต้ตอบกับสินค้าของผู้ใช้
+// โครงสร้างตามไฟล์: data/product_histories/{userId}_products.json
+model ProductHistory {
+  id              String   @id @default(uuid())
+  userId          String
+  product_id      String   // รหัสสินค้า
+
+  // ข้อมูลสินค้า
+  product_name    String
+  category        String?
+
+  // ข้อมูลการโต้ตอบ
+  relevance_score Float
+  context         String?  // JSON: { url, category, price }
+
+
+  timestamp       BigInt   // Unix timestamp in milliseconds
+
+  @@index([userId])
+  @@index([product_id])
+  @@index([timestamp])
+  @@unique([userId, product_id, timestamp])
+}
+
+model ChatUserState {
+  id              String   @id @default(uuid())
+  userId          String   @unique
+
+  // Token usage summary
+  apiInputTokens  Int      @default(0)
+  apiOutputTokens Int      @default(0)
+  aiInputTokens   Int      @default(0)
+  aiOutputTokens  Int      @default(0)
+
+  // Read status (สำหรับ API history)
+  apiLastRead     BigInt?
+
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+}
+
+
+
+model UserLanguage {
+  id                    String   @id @default(uuid())
+  userId                String   @unique
+
+  // ข้อมูลภาษาปัจจุบัน
+  language              String   // TH, EN, ZH, JA, etc
+  isLocked              Boolean  @default(false)
+  firstDetected         String?
+  conversationStarted   Boolean  @default(false)
+
+  // ประวัติการตรวจจับภาษา
+  detectionHistory      String?  // JSON array of detection events
+
+  // Metadata
+  lastUpdateTime        BigInt?  // Unix timestamp in milliseconds
+  createdAt             BigInt?  // Unix timestamp in milliseconds
+  version               String?  @default("2.0")
+
+  @@index([language])
+}
+
+
+
+
+model VectorDBConfig {
+  id                  String   @id @default(uuid())
+  key                 String   @unique @default("default")
+
+  // ข้อมูลการตั้งค่า
+  enabled             Boolean  @default(true)
+  dbPath              String   @default("data/lancedb")
+  embeddingModel      String   @default("text-embedding-3-large")
+  embeddingDimension  Int      @default(3072)
+  maxRetries          Int      @default(3)
+  timeout             Int      @default(30000)
+  apiKey              String?  // OpenAI API Key (encrypted)
+
+  // Vector Store Types
+  productVectorEnabled    Boolean @default(true)
+  knowledgeVectorEnabled  Boolean @default(false)
+
+  // Product Search Config
+  productMaxResults       Int     @default(5)
+  productSimilarityThreshold Float @default(0.7)
+
+  // Knowledge RAG Config
+  knowledgeMaxResults     Int     @default(5)
+  knowledgeSimilarityThreshold Float @default(0.7)
+
+  // Metadata
+  created_at          DateTime @default(now())
+  last_updated        DateTime @updatedAt
+
+}
+
+
+model ProductSearchConfig {
+  id                    String   @id @default(uuid())
+  key                   String   @unique @default("default")
+
+  // Search Parameters
+  topResults            Int      @default(7)
+  contextWindow         Int      @default(15)
+  relevanceThreshold    Float    @default(0.03)
+  embeddingBoostFactor  Float    @default(2.0)
+
+
+  scoreThresholds       String   @default("{\"minimum\":15,\"followup\":20,\"dimension\":15,\"material\":12,\"type\":15,\"sharedNumbers\":15,\"stockAvailable\":10,\"stockUnavailable\":-10,\"historicalInterest\":50}")
+
+  searchMethods         String   @default("{\"vectorSearchEnabled\":true,\"keywordSearchEnabled\":true,\"directoryFallbackEnabled\":true,\"crossLanguageSearch\":false}")
+
+  caching               String   @default("{\"contextCacheTTL\":1800,\"userStateCacheTTL\":3600,\"productCacheTTL\":3600}")
+
+  cleanup               String   @default("{\"expiredContextInterval\":3600000,\"contextExpirationTime\":1800000}")
+
+  created_at            DateTime @default(now())
+  last_updated          DateTime @updatedAt
+
+}
+
+model KnowledgeEntry {
+  id                  String   @id @default(uuid())
+
+  // เนื้อหา
+  title               String
+  content             String   // เนื้อหาหลัก
+  category            String?  // หมวดหมู่
+  tags                String?  // JSON array of tags
+
+  // สถานะ
+  enabled             Boolean  @default(true)
+
+  // Vector info
+  vectorId            String?  // ID ใน Vector DB
+
+  // Metadata
+  created_at          DateTime @default(now())
+  last_updated        DateTime @updatedAt
+
+  @@index([enabled])
+  @@index([category])
+}
+
+
+// Document Model - เอกสารที่อัปโหลด
+model Document {
+  id                  String   @id @default(uuid())
+
+  // ข้อมูลเอกสาร
+  title               String
+  filename            String
+  file_path           String
+  file_type           String   // pdf, doc, docx, txt, md, png, jpg, etc
+  file_size           Int      // bytes
+
+  // เนื้อหาที่ extract ได้
+  content             String?  // Text extracted via OCR or text extraction
+
+  // Knowledge RAG Integration
+  indexed_to_rag      Boolean  @default(false)  // ว่า index ไปยัง Knowledge RAG แล้วหรือยัง
+  rag_entry_id        String?  // ID ของ KnowledgeEntry ที่เชื่อมโยง
+
+  // Metadata
+  uploaded_at         DateTime @default(now())
+  last_indexed_at     DateTime?  // วันที่ index ล่าสุด
+
+  @@index([file_type])
+  @@index([uploaded_at])
+  @@index([indexed_to_rag])
+}
+
+// ========== Context Window Model ==========
+
+// Context Window Model - การตั้งค่า System Prompt และ Context สำหรับ RAG
+model ContextWindow {
+  id                  String   @id @default(uuid())
+  key                 String   @unique @default("default")
+
+  // System Prompt
+  system_prompt       String   @default("คุณคือผู้ช่วยที่ชาญฉลาดในการให้ข้อมูลเกี่ยวกับสินค้า")
+
+  // RAG Settings
+  use_product_rag     Boolean  @default(true)   // ใช้ Product RAG หรือไม่
+  use_knowledge_rag   Boolean  @default(true)   // ใช้ Knowledge RAG หรือไม่
+
+  // Context Settings
+  max_context_messages Int     @default(10)     // จำนวนข้อความย้อนหลังที่จะใช้
+  include_user_history Boolean @default(true)   // รวมประวัติผู้ใช้หรือไม่
+
+  // Temperature & Model Settings
+  temperature         Float    @default(0.7)
+  model_name          String   @default("gpt-4")
+  max_tokens          Int      @default(2000)
+
+  // Metadata
+  created_at          DateTime @default(now())
+  last_updated        DateTime @updatedAt
+
+}
+
+model AuthUser {
+  id          String   @id @default(uuid())
+  username    String   @unique
+  password    String
+  employeeId  String   @unique
+  role        String   @default("user")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

@@ -1,0 +1,22 @@
+diff --git a/node_modules/@google/generative-ai/dist/index.js b/node_modules/@google/generative-ai/dist/index.js
+index 2fe925f..6a61935 100644
+--- a/node_modules/@google/generative-ai/dist/index.js
++++ b/node_modules/@google/generative-ai/dist/index.js
+@@ -305,7 +305,7 @@ class GoogleGenerativeAIAbortError extends GoogleGenerativeAIError {
+  * limitations under the License.
+  */
+ const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com";
+-const DEFAULT_API_VERSION = "v1beta";
++const DEFAULT_API_VERSION = "v1";
+ /**
+  * We can't `require` package.json if this runs on web. We will use rollup to
+  * swap in the version number here at build time.
+@@ -1028,7 +1028,7 @@ function formatEmbedContentInput(params) {
+  * See the License for the specific language governing permissions and
+  * limitations under the License.
+  */
+-// https://ai.google.dev/api/rest/v1beta/Content#part
++// https://ai.google.dev/api/rest/v1/Content#part
+ const VALID_PART_FIELDS = [
+     "text",
+     "inlineData",

@@ -1,0 +1,31 @@
+{
+  "upload": {
+    "batchSize": 100,
+    "retryAttempts": 3,
+    "retryDelay": 1000
+  },
+  "search": {
+    "topResults": 5,
+    "contextWindow": 10,
+    "vectorCounts": {
+      "initial": 15,
+      "final": 5
+    }
+  },
+  "cache": {
+    "ttl": {
+      "product": 300,
+      "conversation": 1800,
+      "productContext": 3600,
+      "embedding": 86400
+    }
+  },
+  "vectorDb": {
+    "dimension": 3072,
+    "model": "text-embedding-3-large"
+  },
+  "stock": {
+    "enabled": true,
+      "lowStockThreshold": 10
+  }
+}

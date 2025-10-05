@@ -1,0 +1,52 @@
+[
+  {
+    "enabled": true,
+    "label": "ชื่อสินค้า:",
+    "key": "product_name"
+  },
+  {
+    "enabled": true,
+    "label": "หมวดหมู่:",
+    "key": "category"
+  },
+  {
+    "enabled": true,
+    "label": "ลักษณะ:",
+    "key": "product_type"
+  },
+  {
+    "enabled": true,
+    "label": "รายละเอียด:",
+    "key": "short_description"
+  },
+  {
+    "enabled": true,
+    "label": "การใช้งาน:",
+    "key": "usage"
+  },
+  {
+    "enabled": true,
+    "label": "สินค้าที่เกี่ยวข้อง:",
+    "key": "related_products"
+  },
+  {
+    "enabled": true,
+    "label": "สินค้าที่ใช้ร่วมกันได้:",
+    "key": "compatible_products"
+  },
+  {
+    "enabled": true,
+    "label": "ราคา:",
+    "key": "price"
+  },
+  {
+    "enabled": true,
+    "label": "ช่วงราคา:",
+    "key": "price_ranges"
+  },
+  {
+    "enabled": true,
+    "label": "รายละเอียดเพิ่มเติม:",
+    "key": "details"
+  }
+]

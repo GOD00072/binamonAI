@@ -1,0 +1,11 @@
+{
+  "enabled": true,
+  "maxImagesPerProduct": 10,
+  "preventDuplicateSends": true,
+  "autoSendOnUrlDetection": true,
+  "imageSelectionMode": "manual",
+  "sendDelay": 1000,
+  "maxImageSize": 10485760,
+  "useOriginalImages": true,
+  "imageDisplayMode": "carousel"
+}

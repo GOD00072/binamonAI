@@ -1,0 +1,20 @@
+{
+  "userId": "session-1759690889780",
+  "language": "TH",
+  "isLocked": true,
+  "firstDetected": "TH",
+  "conversationStarted": true,
+  "lastUpdateTime": 1759690907313,
+  "detectionHistory": [
+    {
+      "language": "TH",
+      "timestamp": 1759690907313,
+      "userText": "hi",
+      "method": "auto_detected",
+      "textLength": 2,
+      "wordCount": 1
+    }
+  ],
+  "createdAt": 1759690894163,
+  "version": "2.0"
+}

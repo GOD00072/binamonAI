@@ -1,0 +1,14 @@
+@import './styles/template.css';
+
+body {
+  margin: 0;
+  font-family: 'Kanit', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, 'Noto Sans', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--bg);
+  color: var(--muted);
+}
+
+code {
+  font-family: var(--font-family-mono, 'Fira Code'), 'Courier New', monospace;
+}

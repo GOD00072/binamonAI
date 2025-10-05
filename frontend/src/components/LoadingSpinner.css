@@ -1,0 +1,219 @@
+/* LoadingSpinner.css */
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  font-family: 'Sarabun', 'Kanit', sans-serif;
+}
+
+.loading-container.thai {
+  background: linear-gradient(135deg, #fff8e7 0%, #f0f8ff 100%);
+  border-radius: 20px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+}
+
+.loading-container.elegant {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-radius: 20px;
+  box-shadow: 0 15px 35px rgba(102, 126, 234, 0.3);
+}
+
+/* Logo Styling */
+.logo-container {
+  margin-bottom: 2rem;
+  text-align: center;
+}
+
+.swan-logo {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 1rem;
+}
+
+.swan-body {
+  width: 40px;
+  height: 30px;
+  background: linear-gradient(45deg, #FFD700, #FFA500);
+  border-radius: 50% 50% 70% 70%;
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  box-shadow: 0 4px 15px rgba(255, 215, 0, 0.3);
+}
+
+.swan-neck {
+  width: 8px;
+  height: 35px;
+  background: linear-gradient(to top, #FFD700, #FFF8DC);
+  border-radius: 50px;
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%) rotate(-10deg);
+  box-shadow: 2px 2px 8px rgba(255, 215, 0, 0.2);
+}
+
+.swan-head {
+  width: 15px;
+  height: 12px;
+  background: linear-gradient(45deg, #FFD700, #FFFFE0);
+  border-radius: 50% 50% 20% 50%;
+  position: absolute;
+  top: 5px;
+  left: 60%;
+  transform: translateX(-50%);
+  box-shadow: 1px 1px 5px rgba(255, 215, 0, 0.3);
+}
+
+.swan-head::after {
+  content: '';
+  width: 4px;
+  height: 2px;
+  background: #FF6B35;
+  border-radius: 2px;
+  position: absolute;
+  top: 4px;
+  right: 2px;
+}
+
+.company-name {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #2c3e50;
+  margin: 0;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  background: linear-gradient(45deg, #FFD700, #FF6B35);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.elegant .company-name {
+  color: white;
+  -webkit-text-fill-color: white;
+}
+
+/* Spinner Styling */
+.spinner-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.spinner-wrapper.sm {
+  width: 50px;
+  height: 50px;
+}
+
+.spinner-wrapper.lg {
+  width: 80px;
+  height: 80px;
+}
+
+.loading-spinner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.spinner-ring {
+  position: absolute;
+  border: 3px solid transparent;
+  border-radius: 50%;
+  animation: spin 1.5s linear infinite;
+}
+
+.spinner-ring:nth-child(1) {
+  width: 100%;
+  height: 100%;
+  border-top-color: #FFD700;
+  animation-delay: 0s;
+}
+
+.spinner-ring:nth-child(2) {
+  width: 75%;
+  height: 75%;
+  top: 12.5%;
+  left: 12.5%;
+  border-right-color: #FF6B35;
+  animation-delay: -0.5s;
+  animation-direction: reverse;
+}
+
+.spinner-ring:nth-child(3) {
+  width: 50%;
+  height: 50%;
+  top: 25%;
+  left: 25%;
+  border-bottom-color: #4ECDC4;
+  animation-delay: -1s;
+}
+
+.elegant .spinner-ring:nth-child(1) {
+  border-top-color: #ffffff;
+}
+
+.elegant .spinner-ring:nth-child(2) {
+  border-right-color: #a8e6cf;
+}
+
+.elegant .spinner-ring:nth-child(3) {
+  border-bottom-color: #ffd3a5;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Message Styling */
+.loading-message {
+  margin-top: 1.5rem;
+  font-size: 1rem;
+  color: #666;
+  text-align: center;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+}
+
+.elegant .loading-message {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .loading-container {
+    padding: 1.5rem;
+  }
+  
+  .company-name {
+    font-size: 1.2rem;
+  }
+  
+  .swan-logo {
+    width: 60px;
+    height: 60px;
+  }
+}
+
+/* Animation for the entire container */
+.loading-container {
+  animation: fadeInUp 0.6s ease-out;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

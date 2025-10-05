@@ -1,0 +1,28 @@
+{
+  "userId": "session-1759644682866",
+  "language": "TH",
+  "isLocked": true,
+  "firstDetected": "TH",
+  "conversationStarted": true,
+  "lastUpdateTime": 1759644739989,
+  "detectionHistory": [
+    {
+      "language": "TH",
+      "timestamp": 1759644703625,
+      "userText": "hi",
+      "method": "auto_detected",
+      "textLength": 2,
+      "wordCount": 1
+    },
+    {
+      "language": "TH",
+      "timestamp": 1759644739989,
+      "userText": "มี ข้อมูลอะไรบ้าง ",
+      "method": "auto_detected",
+      "textLength": 18,
+      "wordCount": 3
+    }
+  ],
+  "createdAt": 1759644685861,
+  "version": "2.0"
+}

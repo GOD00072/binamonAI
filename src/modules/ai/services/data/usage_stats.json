@@ -1,0 +1,11 @@
+{
+  "totalRequests": 211,
+  "totalInputTokens": 2022479,
+  "totalOutputTokens": 75767,
+  "totalCachedTokens": 0,
+  "costs": {
+    "input": 2.5280987500000016,
+    "output": 0.37883500000000003,
+    "caching": 0
+  }
+}

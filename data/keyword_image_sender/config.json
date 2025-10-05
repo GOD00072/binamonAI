@@ -1,0 +1,11 @@
+{
+  "enabled": true,
+  "autoSendOnKeywordDetection": true,
+  "sendDelay": 1000,
+  "maxImageSize": 10485760,
+  "caseSensitive": false,
+  "exactMatch": false,
+  "preventDuplicateSends": true,
+  "introMessageEnabled": true,
+  "introMessageTemplate": "📷 รูปภาพสำหรับ: {keyword}"
+}
