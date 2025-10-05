@@ -36,3 +36,4 @@ yarn-error.log*
 
 # Claude settings
 .claude/
+**/package-lock.json
