@@ -1,6 +1,5 @@
 # binamonAI
 
-This project is an AI assistant for Thai Food Packaging.
 
 ## Prerequisites
 
@@ -36,8 +35,7 @@ This project is an AI assistant for Thai Food Packaging.
     ```bash
     npm run dev:frontend
     ```
-3.  Open your browser and navigate to `http://localhost:3000`
-
+3.  Open your browser and navigate to `http://localhost:2999`
 ## Available Scripts
 
 -   `npm start`: Starts the backend server.
