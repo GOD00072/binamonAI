@@ -1,6 +1,6 @@
 'use strict';
 
-const DISABLE_AUTH = false; 
+const DISABLE_AUTH = true; 
 
 // แก้ไขเพื่อตรวจสอบ token จาก cookie หรือ headers
 const authMiddleware = (authManager) => {
@@ -124,5 +124,6 @@ const authMiddleware = (authManager) => {
        next();
    };
 };
+
 
 module.exports = authMiddleware;
