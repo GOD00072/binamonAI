@@ -461,14 +461,46 @@ model ContextWindow {
   lineOaConfigs       LineOaConfig[]
 }
 
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  users       AuthUser[]
+  permissions RolePermission[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Permission {
+  id          String   @id @default(uuid())
+  name        String   @unique // e.g., "user:create", "product:edit"
+  description String?
+  roles       RolePermission[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  assignedAt   DateTime   @default(now())
+
+  @@id([roleId, permissionId])
+}
+
 model AuthUser {
   id          String   @id @default(uuid())
   username    String   @unique
   password    String
   employeeId  String   @unique
-  role        String   @default("user")
+  roleId      String
+  role        Role     @relation(fields: [roleId], references: [id])
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([roleId])
 }
 
 model LineOaConfig {

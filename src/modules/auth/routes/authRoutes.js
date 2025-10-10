@@ -15,7 +15,7 @@ class AuthManager {
 
     async initialize() {
         try {
-            await this.ensureDefaultAdmin();
+            await this.ensureDefaultRolesAndAdmin();
             this.logger.info('Auth manager initialized successfully');
             return true;
         } catch (error) {
@@ -24,47 +24,60 @@ class AuthManager {
         }
     }
 
-    async ensureDefaultAdmin() {
+    async ensureDefaultRolesAndAdmin() {
         try {
-            const existingAdmin = await prisma.authUser.findFirst({ where: { role: 'admin' } });
-            if (existingAdmin) {
-                return;
-            }
-
-            const passwordHash = await this.hashPassword('admin123');
-            const existingUsername = await prisma.authUser.findUnique({ where: { username: 'admin' } });
-
-            if (existingUsername) {
-                await prisma.authUser.update({
-                    where: { id: existingUsername.id },
-                    data: {
-                        role: 'admin',
-                        password: passwordHash,
-                        employeeId: existingUsername.employeeId || 'ADMIN001'
-                    }
+            // 1. Ensure permissions exist
+            const permissions = [
+                { name: 'admin:access', description: 'Full administrative access' },
+                { name: 'users:manage', description: 'Manage users' },
+                { name: 'roles:manage', description: 'Manage roles and permissions' },
+            ];
+            for (const p of permissions) {
+                await prisma.permission.upsert({
+                    where: { name: p.name },
+                    update: {},
+                    create: p,
                 });
-                this.logger.warn('Elevated existing user "admin" to admin role and reset password to default.');
-                return;
+            }
+            this.logger.info('Default permissions ensured.');
+
+            // 2. Ensure roles exist
+            let adminRole = await prisma.role.findUnique({ where: { name: 'admin' } });
+            if (!adminRole) {
+                adminRole = await prisma.role.create({ data: { name: 'admin', description: 'Administrator' } });
+                this.logger.info('Created "admin" role.');
             }
 
-            let employeeId = 'ADMIN001';
-            const employeeExists = await prisma.authUser.findUnique({ where: { employeeId } });
-            if (employeeExists) {
-                employeeId = `ADMIN${Date.now()}`;
+            let userRole = await prisma.role.findUnique({ where: { name: 'user' } });
+            if (!userRole) {
+                userRole = await prisma.role.create({ data: { name: 'user', description: 'Standard User' } });
+                this.logger.info('Created "user" role.');
             }
 
-            await prisma.authUser.create({
-                data: {
-                    username: 'admin',
-                    password: passwordHash,
-                    employeeId,
-                    role: 'admin'
-                }
+            // 3. Assign all permissions to admin role
+            const allPermissions = await prisma.permission.findMany();
+            await prisma.rolePermission.deleteMany({ where: { roleId: adminRole.id } });
+            await prisma.rolePermission.createMany({
+                data: allPermissions.map(p => ({ roleId: adminRole.id, permissionId: p.id })),
             });
+            this.logger.info('Assigned all permissions to "admin" role.');
 
-            this.logger.info('Created default admin account (admin/admin123).');
+            // 4. Ensure default admin user exists
+            const adminUser = await prisma.authUser.findFirst({ where: { role: { name: 'admin' } } });
+            if (!adminUser) {
+                const passwordHash = await this.hashPassword('admin123');
+                await prisma.authUser.create({
+                    data: {
+                        username: 'admin',
+                        password: passwordHash,
+                        employeeId: 'ADMIN001',
+                        roleId: adminRole.id,
+                    },
+                });
+                this.logger.info('Created default admin user (admin/admin123).');
+            }
         } catch (error) {
-            this.logger.error('Error ensuring default admin:', error);
+            this.logger.error('Error ensuring default roles and admin:', error);
             throw error;
         }
     }
@@ -73,7 +86,6 @@ class AuthManager {
         if (!user) {
             return null;
         }
-
         const { password, ...userData } = user;
         return userData;
     }
@@ -88,7 +100,14 @@ class AuthManager {
     }
 
     generateToken(user) {
-        return jwt.sign(user, this.secretKey, { expiresIn: this.tokenExpiration });
+        const payload = {
+            id: user.id,
+            username: user.username,
+            employeeId: user.employeeId,
+            role: user.role.name,
+            permissions: user.role.permissions.map(p => p.permission.name),
+        };
+        return jwt.sign(payload, this.secretKey, { expiresIn: this.tokenExpiration });
     }
 
     verifyToken(token) {
@@ -102,7 +121,20 @@ class AuthManager {
 
     async authenticate(username, password) {
         try {
-            const user = await prisma.authUser.findUnique({ where: { username } });
+            const user = await prisma.authUser.findUnique({
+                where: { username },
+                include: {
+                    role: {
+                        include: {
+                            permissions: {
+                                include: {
+                                    permission: true,
+                                },
+                            },
+                        },
+                    },
+                },
+            });
 
             if (!user) {
                 this.logger.info(`Authentication failed: User ${username} not found`);
@@ -117,12 +149,12 @@ class AuthManager {
             }
 
             const sanitizedUser = this.sanitizeUser(user);
-            const token = this.generateToken(sanitizedUser);
+            const token = this.generateToken(user);
             this.logger.info(`User ${username} authenticated successfully`);
 
             return {
                 user: sanitizedUser,
-                token
+                token,
             };
         } catch (error) {
             this.logger.error('Authentication error:', error);
@@ -134,18 +166,21 @@ class AuthManager {
         try {
             const existingByUsername = await prisma.authUser.findUnique({ where: { username: userData.username } });
             if (existingByUsername) {
-                return {
-                    success: false,
-                    message: 'Username already exists'
-                };
+                return { success: false, message: 'Username already exists' };
             }
 
             const existingByEmployeeId = await prisma.authUser.findUnique({ where: { employeeId: userData.employeeId } });
             if (existingByEmployeeId) {
-                return {
-                    success: false,
-                    message: 'Employee ID already exists'
-                };
+                return { success: false, message: 'Employee ID already exists' };
+            }
+
+            let roleId = userData.roleId;
+            if (!roleId) {
+                const userRole = await prisma.role.findUnique({ where: { name: 'user' } });
+                if (!userRole) {
+                    return { success: false, message: 'Default user role not found.' };
+                }
+                roleId = userRole.id;
             }
 
             const createdUser = await prisma.authUser.create({
@@ -153,21 +188,18 @@ class AuthManager {
                     username: userData.username,
                     password: await this.hashPassword(userData.password),
                     employeeId: userData.employeeId,
-                    role: userData.role || 'user'
-                }
+                    roleId: roleId,
+                },
             });
 
-            this.logger.info(`Created new user: ${userData.username} with role: ${userData.role}`);
+            this.logger.info(`Created new user: ${userData.username} with roleId: ${roleId}`);
             return {
                 success: true,
-                user: this.sanitizeUser(createdUser)
+                user: this.sanitizeUser(createdUser),
             };
         } catch (error) {
             this.logger.error('Error creating user:', error);
-            return {
-                success: false,
-                message: 'Internal server error'
-            };
+            return { success: false, message: 'Internal server error' };
         }
     }
 
@@ -176,116 +208,83 @@ class AuthManager {
             const existingUser = await prisma.authUser.findUnique({ where: { id } });
 
             if (!existingUser) {
-                return {
-                    success: false,
-                    message: 'User not found'
-                };
+                return { success: false, message: 'User not found' };
             }
 
             if (userData.username && userData.username !== existingUser.username) {
                 const duplicateUsername = await prisma.authUser.findUnique({ where: { username: userData.username } });
                 if (duplicateUsername) {
-                    return {
-                        success: false,
-                        message: 'Username already exists'
-                    };
+                    return { success: false, message: 'Username already exists' };
                 }
             }
 
             if (userData.employeeId && userData.employeeId !== existingUser.employeeId) {
                 const duplicateEmployee = await prisma.authUser.findUnique({ where: { employeeId: userData.employeeId } });
                 if (duplicateEmployee) {
-                    return {
-                        success: false,
-                        message: 'Employee ID already exists'
-                    };
+                    return { success: false, message: 'Employee ID already exists' };
                 }
             }
 
             const updateData = {};
-
-            if (userData.username) {
-                updateData.username = userData.username;
-            }
-
-            if (userData.role) {
-                updateData.role = userData.role;
-            }
-
-            if (userData.employeeId) {
-                updateData.employeeId = userData.employeeId;
-            }
-
-            if (userData.password) {
-                updateData.password = await this.hashPassword(userData.password);
-            }
+            if (userData.username) updateData.username = userData.username;
+            if (userData.roleId) updateData.roleId = userData.roleId;
+            if (userData.employeeId) updateData.employeeId = userData.employeeId;
+            if (userData.password) updateData.password = await this.hashPassword(userData.password);
 
             if (Object.keys(updateData).length === 0) {
-                return {
-                    success: true,
-                    user: this.sanitizeUser(existingUser)
-                };
+                return { success: true, user: this.sanitizeUser(existingUser) };
             }
 
             const updatedUser = await prisma.authUser.update({
                 where: { id },
-                data: updateData
+                data: updateData,
             });
 
             this.logger.info(`Updated user: ${updatedUser.username}`);
             return {
                 success: true,
-                user: this.sanitizeUser(updatedUser)
+                user: this.sanitizeUser(updatedUser),
             };
         } catch (error) {
             this.logger.error('Error updating user:', error);
-            return {
-                success: false,
-                message: 'Internal server error'
-            };
+            return { success: false, message: 'Internal server error' };
         }
     }
 
     async deleteUser(id) {
         try {
-            const user = await prisma.authUser.findUnique({ where: { id } });
+            const user = await prisma.authUser.findUnique({
+                where: { id },
+                include: { role: true },
+            });
 
             if (!user) {
-                return {
-                    success: false,
-                    message: 'User not found'
-                };
+                return { success: false, message: 'User not found' };
             }
 
-            if (user.role === 'admin') {
-                const adminCount = await prisma.authUser.count({ where: { role: 'admin' } });
+            if (user.role.name === 'admin') {
+                const adminCount = await prisma.authUser.count({ where: { role: { name: 'admin' } } });
                 if (adminCount <= 1) {
-                    return {
-                        success: false,
-                        message: 'Cannot delete the last admin user'
-                    };
+                    return { success: false, message: 'Cannot delete the last admin user' };
                 }
             }
 
             await prisma.authUser.delete({ where: { id } });
 
             this.logger.info(`Deleted user: ${user.username}`);
-            return {
-                success: true,
-                message: 'User deleted successfully'
-            };
+            return { success: true, message: 'User deleted successfully' };
         } catch (error) {
             this.logger.error('Error deleting user:', error);
-            return {
-                success: false,
-                message: 'Internal server error'
-            };
+            return { success: false, message: 'Internal server error' };
         }
     }
 
     async getUsers() {
         try {
-            const users = await prisma.authUser.findMany({ orderBy: { createdAt: 'asc' } });
+            const users = await prisma.authUser.findMany({
+                orderBy: { createdAt: 'asc' },
+                include: { role: true },
+            });
             return users.map(user => this.sanitizeUser(user));
         } catch (error) {
             this.logger.error('Error getting users:', error);
@@ -294,7 +293,10 @@ class AuthManager {
     }
 
     async getUserById(id, { includePassword = false } = {}) {
-        const user = await prisma.authUser.findUnique({ where: { id } });
+        const user = await prisma.authUser.findUnique({
+            where: { id },
+            include: { role: true },
+        });
         if (!user) {
             return null;
         }
@@ -305,78 +307,50 @@ class AuthManager {
         const user = await this.getUserById(id, { includePassword: true });
 
         if (!user) {
-            return {
-                success: false,
-                message: 'User not found'
-            };
+            return { success: false, message: 'User not found' };
         }
 
         const isPasswordValid = await this.verifyPassword(currentPassword, user.password);
         if (!isPasswordValid) {
-            return {
-                success: false,
-                message: 'Current password is incorrect'
-            };
+            return { success: false, message: 'Current password is incorrect' };
         }
 
         await prisma.authUser.update({
             where: { id },
-            data: {
-                password: await this.hashPassword(newPassword)
-            }
+            data: { password: await this.hashPassword(newPassword) },
         });
 
         this.logger.info(`Password updated for user: ${user.username}`);
-        return {
-            success: true,
-            message: 'Password changed successfully'
-        };
+        return { success: true, message: 'Password changed successfully' };
     }
 
-    authorizeRequest(rolesAllowed = ['admin']) {
-        return async (req, res, next) => {
-            try {
-                if (req.path === '/webhook') {
-                    return next();
-                }
-
-                const authHeader = req.headers.authorization;
-                if (!authHeader || !authHeader.startsWith('Bearer ')) {
-                    return res.status(401).json({ error: 'No token provided' });
-                }
-
-                const token = authHeader.split(' ')[1];
-                const decoded = this.verifyToken(token);
-
-                if (!decoded) {
-                    return res.status(401).json({ error: 'Invalid token' });
-                }
-
-                const now = Math.floor(Date.now() / 1000);
-                if (decoded.exp && decoded.exp < now) {
-                    return res.status(401).json({ error: 'Token expired' });
-                }
-
-                if (!decoded.id) {
-                    return res.status(401).json({ error: 'Token payload missing user id' });
-                }
-
-                const userRecord = await prisma.authUser.findUnique({ where: { id: decoded.id } });
-                if (!userRecord) {
-                    return res.status(401).json({ error: 'User not found' });
-                }
-
-                if (rolesAllowed.length > 0 && !rolesAllowed.includes(userRecord.role)) {
-                    this.logger.warn(`Unauthorized access attempt by user ${userRecord.username} with role ${userRecord.role}`);
-                    return res.status(403).json({ error: 'Insufficient permissions' });
-                }
-
-                req.user = this.sanitizeUser(userRecord);
-                next();
-            } catch (error) {
-                this.logger.error('Authorization error:', error);
-                res.status(500).json({ error: 'Authorization failed' });
+    authorizeRequest(requiredPermission) {
+        return (req, res, next) => {
+            const authHeader = req.headers.authorization;
+            if (!authHeader || !authHeader.startsWith('Bearer ')) {
+                return res.status(401).json({ error: 'No token provided' });
             }
+
+            const token = authHeader.split(' ')[1];
+            const decoded = this.verifyToken(token);
+
+            if (!decoded) {
+                return res.status(401).json({ error: 'Invalid token' });
+            }
+
+            req.user = decoded;
+            const userPermissions = decoded.permissions || [];
+
+            if (userPermissions.includes('admin:access') || (requiredPermission && userPermissions.includes(requiredPermission))) {
+                return next();
+            }
+
+            if (!requiredPermission) {
+                return next();
+            }
+
+            this.logger.warn(`Authorization failed for user ${decoded.username}. Required: ${requiredPermission}`);
+            return res.status(403).json({ error: 'Insufficient permissions' });
         };
     }
 
@@ -391,40 +365,31 @@ class AuthManager {
     }
 }
 
-// Create router function that sets up the auth routes
 const createAuthRoutes = (logger) => {
     const authManager = new AuthManager(logger);
-    
-    // Initialize auth manager
+
     authManager.initialize().catch(error => {
         logger.error('Failed to initialize auth manager:', error);
     });
-    
-    // Login route
+
     router.post('/login', async (req, res) => {
         try {
             const { username, password } = req.body;
-            
             if (!username || !password) {
                 return res.status(400).json({ error: 'Username and password are required' });
             }
-            
             const result = await authManager.authenticate(username, password);
-            
             if (!result) {
                 return res.status(401).json({ error: 'Invalid credentials' });
             }
-            
             res.json(result);
         } catch (error) {
             logger.error('Login error:', error);
             res.status(500).json({ error: 'Login failed' });
         }
     });
-    
-    // User management routes (admin only)
-    // Get all users
-    router.get('/users', authManager.authorizeRequest(['admin']), async (req, res) => {
+
+    router.get('/users', authManager.authorizeRequest('users:manage'), async (req, res) => {
         try {
             const users = await authManager.getUsers();
             res.json(users);
@@ -433,83 +398,64 @@ const createAuthRoutes = (logger) => {
             res.status(500).json({ error: 'Failed to retrieve users' });
         }
     });
-    
-    // Create user
-    router.post('/users', authManager.authorizeRequest(['admin']), async (req, res) => {
+
+    router.post('/users', authManager.authorizeRequest('users:manage'), async (req, res) => {
         try {
-            const { username, password, employeeId, role } = req.body;
-            
+            const { username, password, employeeId, roleId } = req.body;
             if (!username || !password || !employeeId) {
                 return res.status(400).json({ error: 'Username, password, and employee ID are required' });
             }
-            
-            const result = await authManager.createUser({
-                username,
-                password,
-                employeeId,
-                role: role || 'user'
-            });
-            
+            const result = await authManager.createUser({ username, password, employeeId, roleId });
             if (!result.success) {
                 return res.status(400).json({ error: result.message });
             }
-            
             res.status(201).json(result);
         } catch (error) {
             logger.error('Create user error:', error);
             res.status(500).json({ error: 'Failed to create user' });
         }
     });
-    
-    // Update user
-    router.put('/users/:id', authManager.authorizeRequest(['admin']), async (req, res) => {
+
+    router.put('/users/:id', authManager.authorizeRequest('users:manage'), async (req, res) => {
         try {
             const { id } = req.params;
-            const { username, password, employeeId, role } = req.body;
-            
+            const { username, password, employeeId, roleId } = req.body;
             const userData = {};
             if (username) userData.username = username;
             if (password) userData.password = password;
             if (employeeId) userData.employeeId = employeeId;
-            if (role) userData.role = role;
-            
+            if (roleId) userData.roleId = roleId;
+
             const result = await authManager.updateUser(id, userData);
-            
             if (!result.success) {
                 return res.status(400).json({ error: result.message });
             }
-            
             res.json(result);
         } catch (error) {
             logger.error('Update user error:', error);
             res.status(500).json({ error: 'Failed to update user' });
         }
     });
-    
-    // Delete user
-    router.delete('/users/:id', authManager.authorizeRequest(['admin']), async (req, res) => {
+
+    router.delete('/users/:id', authManager.authorizeRequest('users:manage'), async (req, res) => {
         try {
             const { id } = req.params;
             const result = await authManager.deleteUser(id);
-            
             if (!result.success) {
                 return res.status(400).json({ error: result.message });
             }
-            
             res.json(result);
         } catch (error) {
             logger.error('Delete user error:', error);
             res.status(500).json({ error: 'Failed to delete user' });
         }
     });
-    
-    // User profile route
-    router.get('/profile', authManager.authorizeRequest(['admin', 'user']), (req, res) => {
+
+    router.get('/profile', authManager.authorizeRequest(), (req, res) => {
         res.json(req.user);
     });
-    
-    // Change own password
-    router.post('/change-password', authManager.authorizeRequest(['admin', 'user']), async (req, res) => {
+
+    router.post('/change-password', authManager.authorizeRequest(), async (req, res) => {
         try {
             const { currentPassword, newPassword } = req.body;
 
@@ -530,7 +476,7 @@ const createAuthRoutes = (logger) => {
             res.status(500).json({ error: 'Failed to change password' });
         }
     });
-    
+
     return {
         router,
         authManager

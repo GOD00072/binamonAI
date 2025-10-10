@@ -28,7 +28,6 @@ const configRoutes = require('../modules/system/routes/configRoutes');
 const messageConfigRoutes = require('../modules/messaging/routes/messageConfigRoutes');
 const backupRoutes = require('../modules/system/routes/backupRoutes');
 const imageRoutes = require('../modules/media/routes/imageRoutes');
-// const schedulerRoutes = require('./routes/schedulerRoutes'); // ลบแล้ว
 const websocketRoutes = require('../modules/system/routes/websocketRoutes');
 const systemRoutes = require('../modules/system/routes/systemRoutes');
 const productImageRoutes = require('../modules/media/routes/productImageRoutes');
@@ -36,7 +35,6 @@ const productImageManagerRoutes = require('../modules/media/routes/productImageM
 const createKeywordImageRoutes = require('../modules/media/routes/keywordImageRoutes');
 const createKeywordRoutes = require('../modules/messaging/routes/keyRoutes');
 const productBlackRoutes = require('../modules/products/routes/productBlackRoutes');
-// const productRagRoutes = require('./routes/productRagRoutes'); // ลบแล้ว
 const createKnowledgeRoutes = require('../modules/knowledge/routes/knowledgeRoutes');
 const configurationRoutes = require('../modules/system/routes/configurationRoutes');
 const manualProductRoutes = require('../modules/products/routes/manualProductRoutes');
@@ -45,6 +43,7 @@ const vectorDBRoutes = require('../modules/knowledge/routes/vectorDBRoutes');
 const documentRoutes = require('../modules/knowledge/routes/documentRoutes');
 const contextWindowRoutes = require('../modules/ai/routes/contextWindowRoutes');
 const createLineOaConfigRoutes = require('../modules/messaging/routes/lineOaConfigRoutes');
+const createRoleRoutes = require('../modules/auth/routes/roleRoutes');
 
 // Import service modules
 const ChatHistoryManager = require('../modules/chat/services/chatHistoryManager');
@@ -57,7 +56,6 @@ const ProductionProductHandler = require('../modules/products/services/productio
 const MessageTracker = require('../core/tracking/messageTracker');
 const ImageHandler = require('../modules/media/services/imageHandler');
 const KeywordDetector = require('../modules/messaging/services/keywordDetector');
-// const SchedulerService = require('./scheduler'); // ลบแล้ว
 const WebSocketManager = require('./websocket/webSocketManager');
 const ProductImageSender = require('../modules/media/services/productImageSender');
 const KeywordImageSender = require('../modules/media/services/keywordImageSender');
@@ -67,10 +65,6 @@ const ManualProductService = require('../modules/products/services/manualProduct
 const KnowledgeFormatter = require('../modules/ai/services/knowledgeFormatter');
 const KnowledgeRAG = require('../modules/ai/services/knowledgerag');
 const UnifiedContextFormatter = require('../modules/ai/services/UnifiedContextFormatter');
-
-// Import RAG System and Product Service - ปิดการใช้งาน
-// const ragSystem = require('./ragSystem'); // ลบแล้ว
-// const productService = require('./product'); // ลบแล้ว
 
 // Import auth modules
 const createAuthRoutes = require('../modules/auth/routes/authRoutes');
@@ -138,24 +132,17 @@ const messageHandler = new MessageHandler(logger);
 const chatHistory = new ChatHistoryManager(logger);
 const productManager = new ProductManager(logger, chatHistory);
 const productionHandler = new ProductionProductHandler(logger);
-// const productScraper = new ProductScraper(logger); // ปิดการใช้งาน
 const settingsManager = new SettingsManager(logger);
 const messageTracker = new MessageTracker();
 const keywordDetector = new KeywordDetector(logger);
-// const schedulerService = new SchedulerService(logger, null, productManager); // ลบแล้ว
-
-
 const knowledgeFormatter = new KnowledgeFormatter(logger);
 const knowledgeRAG = new KnowledgeRAG(logger);
-
-
 const aiAssistant = new AIAssistant(logger, chatHistory, productManager, productionHandler, knowledgeRAG);
-
-
 aiAssistant.setKnowledgeFormatter(knowledgeFormatter);
 
 // Initialize authentication system
 const { router: authRouter, authManager } = createAuthRoutes(logger);
+const roleRoutes = createRoleRoutes(authManager);
 
 // Initialize LINE Message Handler
 const lineHandler = new LineMessageHandler(
@@ -169,10 +156,7 @@ const lineHandler = new LineMessageHandler(
 const productImageSender = new ProductImageSender(logger, lineHandler);
 const keywordImageSender = new KeywordImageSender(logger, lineHandler);
 const manualProductService = new ManualProductService(logger);
-
 const imageHandler = new ImageHandler(logger, aiAssistant, lineHandler, chatHistory);
-
-
 let webSocketManager = new WebSocketManager(
   io,
   logger,
@@ -180,66 +164,41 @@ let webSocketManager = new WebSocketManager(
   aiAssistant,
   chatHistory
 );
-
-
 logger.info('🔧 Starting service connections...');
-
 lineHandler.setProductImageSender(productImageSender);
 lineHandler.setKeywordImageSender(keywordImageSender);
 lineHandler.setImageHandler(imageHandler);
 lineHandler.setWebSocketManager(webSocketManager);
 lineHandler.setKeywordDetector(keywordDetector);
-
 keywordDetector.setLineHandler(lineHandler);
 webSocketManager.lineHandler = lineHandler;
-
 logger.info('✅ Service connections established');
 
-
 app.use(cors());
-
-// Middleware to parse raw body for webhook signature validation
-// This MUST come before the global express.json() middleware
 app.use('/webhook/line/:oaId', express.raw({ type: 'application/json' }));
-
 app.use(express.json({ limit: '64mb' }));
 app.use(express.urlencoded({ limit: '64mb', extended: true }));
 app.use(morgan('dev'));
 app.use(express.static(STATIC_DIR));
 
-
 app.use((req, res, next) => {
   req.io = io;
   req.webSocketManager = webSocketManager;
   req.imageHandler = imageHandler;
-  // req.ragSystem = ragSystem; // ลบแล้ว
-  // req.productService = productService; // ลบแล้ว
   req.knowledgeFormatter = knowledgeFormatter;
   req.knowledgeRAG = knowledgeRAG;
   req.aiAssistant = aiAssistant;
   next();
 });
 
-// Store services in app.locals for access in routes
 app.locals.knowledgeRAG = knowledgeRAG;
-
-
-app.use((req, res, next) => {
-  if (req.path === '/webhook' || req.path === '/health' || req.path === '/api' || 
-      req.path.startsWith('/api/debug/') || req.path.startsWith('/api/test-') ||
-      req.path.startsWith('/api/gemini/') || req.path.startsWith('/api/images/models') ||
-      req.path.startsWith('/api/rag/') || req.path.startsWith('/api/products/') ||
-      req.path.startsWith('/api/knowledge/') || req.path.startsWith('/api/config/') ||
-      req.path.startsWith('/api/configuration/')) { 
-  }
-  return authMiddleware(authManager)(req, res, next);
-});
-
+app.use(authMiddleware(authManager));
 
 const routes = {
   vectorDB: vectorDBRoutes(logger),
   auth: authRouter,
-  product: productRoutes(productManager, logger, vectorDBRoutes(logger)), // Pass vectorDB routes
+  roles: roleRoutes,
+  product: productRoutes(productManager, logger, vectorDBRoutes(logger)),
   production: productionRoutes(productionHandler, logger),
   linkage: linkageRoutes(productionHandler, logger, productManager),
   ai: aiRoutes(aiAssistant, lineHandler, logger),
@@ -250,7 +209,6 @@ const routes = {
   messageConfig: messageConfigRoutes({ messageHandler, chatHistory, logger, lineHandler, webSocketManager }),
   backup: backupRoutes(logger),
   image: imageRoutes(imageHandler, logger),
-  // scheduler: schedulerRoutes(schedulerService, logger), // ลบแล้ว
   websocket: websocketRoutes({ webSocketManager, lineHandler, logger }),
   system: systemRoutes({ logger, webSocketManager, lineHandler, aiAssistant, chatHistory }),
   productImages: productImageRoutes(productImageSender, logger),
@@ -258,7 +216,6 @@ const routes = {
   keywordImages: createKeywordImageRoutes(keywordImageSender, logger),
   keyword: createKeywordRoutes(keywordDetector, logger),
   productBlack: productBlackRoutes,
-  // rag: productRagRoutes, // ลบแล้ว
   knowledge: createKnowledgeRoutes(knowledgeRAG, knowledgeFormatter, logger),
   configuration: configurationRoutes(aiAssistant, knowledgeRAG, logger),
   manualProducts: manualProductRoutes(manualProductService, logger),
@@ -269,40 +226,47 @@ const routes = {
   lineOaConfig: createLineOaConfigRoutes(logger)
 };
 
-// Register routes
+// Register routes with permissions
 app.use('/api/auth', routes.auth);
-app.use('/api/products/production', routes.production);
-app.use('/api/products/status', routes.product);
-app.use('/api/products', routes.linkage);
-app.use('/api/products', routes.product);  
-app.use('/api/ai', routes.ai);
-app.use('/api/messages', routes.message);
-app.use('/api/users', routes.user);
-app.use('/api/chat', routes.chat);
-app.use('/api/config', routes.config);
-app.use('/api/message-config', routes.messageConfig);
-app.use('/api/backup', routes.backup);
-app.use('/api/images', routes.image);
-// app.use('/api/schedules', routes.scheduler); // ลบแล้ว
-app.use('/api/websocket', routes.websocket);
-app.use('/api/system', routes.system);
-app.use('/api/product-images', routes.productImages);
-app.use('/api/product-image-manager', routes.productImageManager);
-app.use('/api/keyword-images', routes.keywordImages);
-app.use('/api', routes.keyword);
-app.use('/api', routes.productBlack);
-// app.use('/api', routes.rag); // ลบแล้ว
-app.use('/api/knowledge', routes.knowledge);
-app.use('/api/configuration', routes.configuration);
-app.use('/api/manual-products', routes.manualProducts);
-app.use('/api/line', routes.lineApi);
-app.use('/api/vector-db', routes.vectorDB);
-app.use('/api/documents', routes.documents);
-app.use('/api/context-window', routes.contextWindow);
-app.use('/api/product-search-config', routes.productSearchConfig);
-app.use('/api/line-oa-configs', routes.lineOaConfig); 
+app.use('/api/roles', routes.roles);
 
+// Products
+app.use('/api/products/production', authManager.authorizeRequest('products:manage'), routes.production);
+app.use('/api/products/status', authManager.authorizeRequest('products:view'), routes.product);
+app.use('/api/products', authManager.authorizeRequest('products:manage'), routes.linkage);
+app.use('/api/products', authManager.authorizeRequest('products:view'), routes.product);
+app.use('/api/manual-products', authManager.authorizeRequest('products:manage'), routes.manualProducts);
+app.use('/api/product-search-config', authManager.authorizeRequest('config:manage'), routes.productSearchConfig);
+app.use('/api', authManager.authorizeRequest('products:manage'), routes.productBlack);
 
+// AI & Messaging
+app.use('/api/ai', authManager.authorizeRequest('ai:interact'), routes.ai);
+app.use('/api/messages', authManager.authorizeRequest('messages:view'), routes.message);
+app.use('/api/users', authManager.authorizeRequest('users:view'), routes.user);
+app.use('/api/chat', authManager.authorizeRequest('chat:view'), routes.chat);
+app.use('/api/message-config', authManager.authorizeRequest('config:manage'), routes.messageConfig);
+app.use('/api/line', authManager.authorizeRequest('system:admin'), routes.lineApi);
+app.use('/api/line-oa-configs', authManager.authorizeRequest('config:manage'), routes.lineOaConfig);
+
+// Knowledge & Documents
+app.use('/api/knowledge', authManager.authorizeRequest('knowledge:view'), routes.knowledge);
+app.use('/api/vector-db', authManager.authorizeRequest('system:admin'), routes.vectorDB);
+app.use('/api/documents', authManager.authorizeRequest('documents:manage'), routes.documents);
+app.use('/api/context-window', authManager.authorizeRequest('config:manage'), routes.contextWindow);
+
+// Media
+app.use('/api/images', authManager.authorizeRequest('media:view'), routes.image);
+app.use('/api/product-images', authManager.authorizeRequest('media:manage'), routes.productImages);
+app.use('/api/product-image-manager', authManager.authorizeRequest('media:manage'), routes.productImageManager);
+app.use('/api/keyword-images', authManager.authorizeRequest('media:manage'), routes.keywordImages);
+app.use('/api', authManager.authorizeRequest('keywords:manage'), routes.keyword);
+
+// System & Config
+app.use('/api/config', authManager.authorizeRequest('config:view'), routes.config);
+app.use('/api/backup', authManager.authorizeRequest('system:admin'), routes.backup);
+app.use('/api/websocket', authManager.authorizeRequest('system:view'), routes.websocket);
+app.use('/api/system', authManager.authorizeRequest('system:view'), routes.system);
+app.use('/api/configuration', authManager.authorizeRequest('config:manage'), routes.configuration);
 
 app.get('/api/gemini/models', async (req, res) => {
    try {
@@ -473,8 +437,6 @@ app.post('/api/gemini/models/test', express.json(), async (req, res) => {
    }
 });
 
-// ========== UNIFIED FORMATTER CONFIG ENDPOINTS ==========
-
 app.get('/api/config/unified-formatter', async (req, res) => {
     try {
         const config = aiAssistant.getUnifiedFormatterConfig();
@@ -519,14 +481,6 @@ app.post('/api/config/unified-formatter', async (req, res) => {
     }
 });
 
-
-// ========== AI MODE CONFIGURATION ENDPOINTS ==========
-
-// *** ลบ RAG API endpoints - ไม่ใช้งานแล้ว ***
-
-    // เพิ่มใน index.js หรือ routes/configRoutes.js
-
-// Get user language data
 app.get('/api/users/:userId/language', async (req, res) => {
     try {
         const { userId } = req.params;
@@ -557,7 +511,6 @@ app.get('/api/users/:userId/language', async (req, res) => {
     }
 });
 
-// Reset user language
 app.post('/api/users/:userId/language/reset', async (req, res) => {
     try {
         const { userId } = req.params;
@@ -586,7 +539,6 @@ app.post('/api/users/:userId/language/reset', async (req, res) => {
     }
 });
 
-// Get language statistics
 app.get('/api/language/statistics', async (req, res) => {
     try {
         if (!aiAssistant.configManager) {
@@ -612,7 +564,6 @@ app.get('/api/language/statistics', async (req, res) => {
     }
 });
 
-// Load all user language data
 app.post('/api/language/load-all', async (req, res) => {
     try {
         if (!aiAssistant.configManager) {
@@ -639,7 +590,6 @@ app.post('/api/language/load-all', async (req, res) => {
     }
 });
 
-// Test language detection
 app.post('/api/language/test-detection', async (req, res) => {
     try {
         const { text, userId } = req.body;
@@ -686,7 +636,6 @@ app.post('/api/language/test-detection', async (req, res) => {
     }
 });
 
-// Get all users with language detection data
 app.get('/api/language-detection/users', async (req, res) => {
     try {
         if (!aiAssistant.configManager) {
@@ -701,7 +650,6 @@ app.get('/api/language-detection/users', async (req, res) => {
         const userLanguagesPath = path.join(DATA_DIR, 'user_languages');
 
         try {
-            // Read all JSON files from user_languages directory
             const userFiles = await fs.readdir(userLanguagesPath);
             const jsonFiles = userFiles.filter(file => file.endsWith('.json'));
 
@@ -711,20 +659,16 @@ app.get('/api/language-detection/users', async (req, res) => {
                     const fileContent = await fs.readFile(filePath, 'utf8');
                     const userData = JSON.parse(fileContent);
 
-                    // Calculate confidence from actual detection history data
                     let averageConfidence = 0.9;
                     if (userData.detectionHistory && userData.detectionHistory.length > 0) {
-                        // Use actual confidence values from detection history when available
                         const entriesWithConfidence = userData.detectionHistory.filter(d =>
                             d.confidence !== undefined && d.confidence !== null && !isNaN(d.confidence)
                         );
 
                         if (entriesWithConfidence.length > 0) {
-                            // Calculate average of actual confidence values
                             const totalConfidence = entriesWithConfidence.reduce((sum, d) => sum + d.confidence, 0);
                             averageConfidence = totalConfidence / entriesWithConfidence.length;
                         } else {
-                            // Fallback: confidence based on language consistency
                             const currentLang = userData.language ? userData.language.toLowerCase() : 'th';
                             const sameLanguageDetections = userData.detectionHistory.filter(d =>
                                 d.language && d.language.toLowerCase() === currentLang
@@ -733,7 +677,6 @@ app.get('/api/language-detection/users', async (req, res) => {
                         }
                     }
 
-                    // Get last detection timestamp
                     let lastDetection = userData.lastUpdateTime || userData.createdAt || Date.now();
                     if (userData.detectionHistory && userData.detectionHistory.length > 0) {
                         lastDetection = userData.detectionHistory[userData.detectionHistory.length - 1].timestamp;
@@ -780,7 +723,6 @@ app.get('/api/language-detection/users', async (req, res) => {
     }
 });
 
-// Update user language setting
 app.put('/api/language-detection/users/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
@@ -788,17 +730,14 @@ app.put('/api/language-detection/users/:userId', async (req, res) => {
         const fs = require('fs').promises;
         const path = require('path');
 
-        // Update user language file directly
         const userLanguageFile = path.join(DATA_DIR, 'user_languages', `${userId}.json`);
 
         try {
-            // Read existing file
             let userData = {};
             try {
                 const fileContent = await fs.readFile(userLanguageFile, 'utf8');
                 userData = JSON.parse(fileContent);
             } catch (readError) {
-                // File doesn't exist, create new one
                 userData = {
                     userId: userId,
                     language: language,
@@ -807,7 +746,6 @@ app.put('/api/language-detection/users/:userId', async (req, res) => {
                 };
             }
 
-            // Update language
             userData.language = language;
             userData.manualOverride = isManual ? language : null;
             userData.lastUpdate = new Date().toISOString();
@@ -816,7 +754,6 @@ app.put('/api/language-detection/users/:userId', async (req, res) => {
                 userData.detectionHistory = [];
             }
 
-            // Add detection history entry
             userData.detectionHistory.push({
                 language: language,
                 confidence: isManual ? 1.0 : (userData.detectionHistory.length > 0 ? userData.detectionHistory[userData.detectionHistory.length - 1].confidence : 0.9),
@@ -824,7 +761,6 @@ app.put('/api/language-detection/users/:userId', async (req, res) => {
                 isManual: isManual || false
             });
 
-            // Write updated data back to file
             await fs.writeFile(userLanguageFile, JSON.stringify(userData, null, 2));
 
             res.json({
@@ -851,7 +787,6 @@ app.put('/api/language-detection/users/:userId', async (req, res) => {
     }
 });
 
-// Reset user language detection
 app.post('/api/language-detection/users/:userId/reset', async (req, res) => {
     try {
         const { userId } = req.params;
@@ -880,7 +815,6 @@ app.post('/api/language-detection/users/:userId/reset', async (req, res) => {
     }
 });
 
-// Get language detection configuration
 app.get('/api/configuration/language-detection', async (req, res) => {
     try {
         if (!aiAssistant.configManager) {
@@ -890,7 +824,6 @@ app.get('/api/configuration/language-detection', async (req, res) => {
             });
         }
 
-        // Get language detection config
         const config = aiAssistant.configManager.getLanguageDetectionConfig ?
             aiAssistant.configManager.getLanguageDetectionConfig() :
             {
@@ -960,8 +893,6 @@ app.post('/api/config/unified-formatter/reset', async (req, res) => {
     }
 });
 
-// ========== KNOWLEDGE CONFIG ENDPOINTS ==========
-
 app.get('/api/config/knowledge', async (req, res) => {
     try {
         const config = aiAssistant.getKnowledgeConfig();
@@ -979,9 +910,6 @@ app.get('/api/config/knowledge', async (req, res) => {
     }
 });
 
-// เพิ่มใน index.js
-
-// *** Single Product Sync Endpoint ***
 app.post('/api/products/sync-single', async (req, res) => {
     try {
         const { url, syncOptions } = req.body;
@@ -994,8 +922,6 @@ app.post('/api/products/sync-single', async (req, res) => {
         }
         
         logger.info(`Single sync request: ${url}`);
-        
-        // Forward to product routes
         req.body = { url, syncOptions };
         return productRoutes.handle(req, res);
         
@@ -1008,7 +934,6 @@ app.post('/api/products/sync-single', async (req, res) => {
     }
 });
 
-// *** Separate Sync and Upload Status ***
 app.get('/api/products/sync-status', async (req, res) => {
     try {
         const syncStatus = await productScraper.getScrapingStatus();
@@ -1031,7 +956,6 @@ app.get('/api/products/sync-status', async (req, res) => {
 
 app.get('/api/products/upload-status', async (req, res) => {
     try {
-        // Get upload status from product manager
         const uploadStatus = await productManager.getUploadStatus?.() || {
             isActive: false,
             message: 'No active upload process'
@@ -1053,7 +977,6 @@ app.get('/api/products/upload-status', async (req, res) => {
     }
 });
 
-// *** Enhanced Job Types Info ***
 app.get('/api/schedules/job-types', (req, res) => {
     try {
         const jobTypes = {
@@ -1222,9 +1145,6 @@ app.post('/api/config/knowledge/reset', async (req, res) => {
     }
 });
 
-// ========== KNOWLEDGE MANAGEMENT INTEGRATION ==========
-
-// Add knowledge context to AI responses
 app.post('/api/ai/chat-with-knowledge', async (req, res) => {
     try {
         const { query, userId, useKnowledge = true, knowledgeOptions = {}, productOptions = {} } = req.body;
@@ -1236,7 +1156,6 @@ app.post('/api/ai/chat-with-knowledge', async (req, res) => {
             });
         }
 
-        // ใช้ chatWithKnowledge method จาก aiAssistant
         const result = await aiAssistant.chatWithKnowledge(query, userId, {
             useKnowledge,
             knowledgeOptions,
@@ -1254,7 +1173,6 @@ app.post('/api/ai/chat-with-knowledge', async (req, res) => {
     }
 });
 
-// Search knowledge endpoint
 app.post('/api/ai/search-knowledge', async (req, res) => {
     try {
         const { query, options = {} } = req.body;
@@ -1268,7 +1186,6 @@ app.post('/api/ai/search-knowledge', async (req, res) => {
 
         const searchResult = await aiAssistant.searchKnowledge(query, options);
         
-        // Add formatted results if successful
         if (searchResult.success && searchResult.results && searchResult.results.length > 0) {
             const formattedResults = knowledgeFormatter.formatKnowledgeList(searchResult.results);
             searchResult.formatted_results = formattedResults;
@@ -1288,7 +1205,6 @@ app.post('/api/ai/search-knowledge', async (req, res) => {
     }
 });
 
-// Generate knowledge context endpoint
 app.post('/api/ai/generate-knowledge-context', async (req, res) => {
     try {
         const { query, options = {} } = req.body;
@@ -1315,8 +1231,6 @@ app.post('/api/ai/generate-knowledge-context', async (req, res) => {
         });
     }
 });
-
-// ========== DEBUG AND TEST ENDPOINTS ==========
 
 app.get('/api/debug/connections', (req, res) => {
   try {
@@ -1356,8 +1270,6 @@ app.get('/api/debug/connections', (req, res) => {
               unifiedFormatterConfig: aiAssistant ? aiAssistant.getUnifiedFormatterConfig() : null
           },
           services: {
-              // ragSystem: !!ragSystem, // ลบแล้ว
-              // productService: !!productService, // ลบแล้ว
               chatHistory: !!chatHistory,
               productManager: !!productManager
           }
@@ -1412,7 +1324,6 @@ app.post('/api/debug/test-url-detection', async (req, res) => {
   }
 });
 
-// Test knowledge system
 app.post('/api/debug/test-knowledge', async (req, res) => {
     try {
         const { query } = req.body;
@@ -1449,7 +1360,6 @@ app.post('/api/debug/test-knowledge', async (req, res) => {
     }
 });
 
-// Test unified context
 app.post('/api/debug/test-unified-context', async (req, res) => {
     try {
         const { query, includeProducts = true, includeKnowledge = true, customConfig } = req.body;
@@ -1464,12 +1374,10 @@ app.post('/api/debug/test-unified-context', async (req, res) => {
         let products = [];
         let knowledgeResults = [];
 
-        // ค้นหา products ถ้าต้องการ
         if (includeProducts) {
             products = await aiAssistant.getProducts(query, 'test-user');
         }
 
-        // ค้นหา knowledge ถ้าต้องการ
         if (includeKnowledge && knowledgeRAG) {
             const searchResult = await knowledgeRAG.searchKnowledge(query, { topK: 3 });
             if (searchResult.success) {
@@ -1477,10 +1385,8 @@ app.post('/api/debug/test-unified-context', async (req, res) => {
             }
         }
 
-        // ทดสอบ unified context
         const testResult = await aiAssistant.testUnifiedContext(query, products, knowledgeResults);
 
-        // ทดสอบ unified formatter โดยตรง
         let directFormatterTest = null;
         if (aiAssistant.unifiedContextFormatter) {
             try {
@@ -1527,7 +1433,6 @@ app.post('/api/debug/test-unified-context', async (req, res) => {
     }
 });
 
-// Test AI chat with knowledge integration
 app.post('/api/debug/test-ai-chat-with-knowledge', async (req, res) => {
     try {
         const { query, useKnowledge = true, knowledgeOptions = {}, testMode = true } = req.body;
@@ -1541,7 +1446,6 @@ app.post('/api/debug/test-ai-chat-with-knowledge', async (req, res) => {
 
         const userId = 'test-user-' + Date.now();
         
-        // Test knowledge search first
         let knowledgeSearchResult = null;
         if (useKnowledge && knowledgeRAG) {
             knowledgeSearchResult = await knowledgeRAG.searchKnowledge(query, {
@@ -1550,11 +1454,10 @@ app.post('/api/debug/test-ai-chat-with-knowledge', async (req, res) => {
             });
         }
 
-        // Test AI chat with knowledge
         const chatResult = await aiAssistant.chatWithKnowledge(query, userId, {
             useKnowledge,
             knowledgeOptions,
-            productOptions: { products: [] } // ไม่ใช้ products ในการทดสอบ
+            productOptions: { products: [] }
         });
 
         res.json({
@@ -1584,7 +1487,6 @@ app.post('/api/debug/test-ai-chat-with-knowledge', async (req, res) => {
     }
 });
 
-// Language and formatter configuration test
 app.get('/api/debug/test-language-config', async (req, res) => {
     try {
         const language = req.query.language || 'TH';
@@ -1615,7 +1517,6 @@ app.get('/api/debug/test-language-config', async (req, res) => {
     }
 });
 
-// Serve temporary images
 app.get('/api/product-images/images/:filename', async (req, res) => {
  try {
     const { filename } = req.params;
@@ -1657,11 +1558,8 @@ app.get('/api/product-images/images/:filename', async (req, res) => {
  }
 });
 
-// Webhook endpoint
-
 const crypto = require('crypto');
 
-// Dynamic Webhook endpoint for Multi-OA support
 app.post('/webhook/line/:oaId', async (req, res) => {
     const { oaId } = req.params;
     const signature = req.headers['x-line-signature'];
@@ -1672,7 +1570,6 @@ app.post('/webhook/line/:oaId', async (req, res) => {
     }
 
     try {
-        // Fetch OA configuration from the database
         const oaConfig = await app.locals.prisma.lineOaConfig.findUnique({
             where: { id: oaId },
         });
@@ -1682,7 +1579,6 @@ app.post('/webhook/line/:oaId', async (req, res) => {
             return res.status(404).json({ error: 'LINE OA configuration not found' });
         }
 
-        // Validate webhook signature
         const channelSecret = oaConfig.channelSecret;
         const hash = crypto.createHmac('sha256', channelSecret).update(body).digest('base64');
 
@@ -1693,9 +1589,7 @@ app.post('/webhook/line/:oaId', async (req, res) => {
 
         const events = JSON.parse(body.toString()).events || [];
 
-        // Pass the channelAccessToken to the handler
         await Promise.all(events.map(async (event) => {
-            // Add channelAccessToken to the event object for the handler to use
             event.channelAccessToken = oaConfig.channelAccessToken;
 
             if (event.type === 'message') {
@@ -1704,7 +1598,7 @@ app.post('/webhook/line/:oaId', async (req, res) => {
                 await keywordDetector.handlePostback({
                     data: event.postback.data,
                     userId: event.source.userId,
-                    channelAccessToken: oaConfig.channelAccessToken // Pass token here as well
+                    channelAccessToken: oaConfig.channelAccessToken
                 });
             }
         }));
@@ -1720,8 +1614,6 @@ app.post('/webhook/line/:oaId', async (req, res) => {
     }
 });
 
-
-// Socket.IO WebSocket configuration
 io.on('connection', (socket) => {
  logger.info('WebSocket client connected', { socketId: socket.id });
  
@@ -1731,7 +1623,6 @@ io.on('connection', (socket) => {
      logger.error('Error in WebSocket Manager:', error);
  }
  
- // Authentication
  socket.on('authenticate', (data) => {
      try {
          const { token } = data;
@@ -1764,7 +1655,6 @@ io.on('connection', (socket) => {
      }
  });
 
- // Image Handler events
  socket.on('get_image_models', async () => {
      try {
          const models = await imageHandler.getAvailableModels();
@@ -1801,7 +1691,6 @@ io.on('connection', (socket) => {
      }
  });
 
- // Knowledge Management events
  socket.on('search_knowledge', async (data) => {
      try {
          const { query, options = {} } = data;
@@ -1836,7 +1725,6 @@ io.on('connection', (socket) => {
      }
  });
 
- // Unified Formatter events
  socket.on('test_unified_formatter', async (data) => {
      try {
          const { query, products = [], knowledgeResults = [], customConfig } = data;
@@ -1882,7 +1770,6 @@ io.on('connection', (socket) => {
      }
  });
 
- // Knowledge Config events
  socket.on('get_knowledge_config', async () => {
      try {
          const config = aiAssistant.getKnowledgeConfig();
@@ -1912,7 +1799,6 @@ io.on('connection', (socket) => {
      }
  });
 
- // AI Chat with Knowledge events
  socket.on('chat_with_knowledge', async (data) => {
      try {
          const { query, userId, useKnowledge = true, knowledgeOptions = {}, productOptions = {} } = data;
@@ -1937,7 +1823,6 @@ io.on('connection', (socket) => {
      }
  });
 
- // Configuration Management events
  socket.on('get_system_config', async (data) => {
      try {
          const { section = 'all' } = data || {};
@@ -1971,7 +1856,6 @@ io.on('connection', (socket) => {
  });
 });
 
-// Error handling
 process.on('unhandledRejection', (reason, promise) => {
     logger.error('Unhandled Rejection', { reason, promise });
 });
@@ -1981,7 +1865,6 @@ process.on('uncaughtException', (error) => {
     setTimeout(() => process.exit(1), 1000);
 });
 
-// 404 handler
 app.use((req, res, next) => {
     if (req.path.startsWith('/api/') || req.path === '/webhook') {
         return res.status(404).json({
@@ -1994,7 +1877,6 @@ app.use((req, res, next) => {
     res.redirect('/');
 });
 
-// Static routes
 const staticRoutes = {
     main: '/',
     login: '/login',
@@ -2004,7 +1886,7 @@ const staticRoutes = {
     imageManager: '/image-manager',
     knowledgeManager: '/knowledge-manager',
     unifiedFormatterManager: '/unified-formatter-manager',
-    configurationManager: '/configuration-manager' // เพิ่ม configuration manager
+    configurationManager: '/configuration-manager'
 };
 
 Object.entries(staticRoutes).forEach(([key, route]) => {
@@ -2021,7 +1903,7 @@ Object.entries(staticRoutes).forEach(([key, route]) => {
     } else if (key === 'unifiedFormatterManager') {
         filename = 'unified-formatter-manager.html';
     } else if (key === 'configurationManager') {
-        filename = 'configuration-manager.html'; // เพิ่ม configuration manager
+        filename = 'configuration-manager.html';
     }
 
     app.get(route, (req, res) => {
@@ -2029,7 +1911,6 @@ Object.entries(staticRoutes).forEach(([key, route]) => {
     });
 });
 
-// Health check with comprehensive system status
 app.get('/health', async (req, res) => {
     try {
         const healthChecks = {
@@ -2038,14 +1919,11 @@ app.get('/health', async (req, res) => {
             productImageSender: productImageSender ? 'running' : 'stopped',
             keywordDetector: keywordDetector ? 'running' : 'stopped',
             imageHandler: imageHandler ? 'running' : 'stopped',
-            // ragSystem: ragSystem ? 'available' : 'unavailable', // ลบแล้ว
-            // productService: productService ? 'available' : 'unavailable', // ลบแล้ว
             knowledgeRAG: knowledgeRAG ? (knowledgeRAG.initialized ? 'initialized' : 'not_initialized') : 'unavailable',
             knowledgeFormatter: knowledgeFormatter ? 'available' : 'unavailable',
             aiAssistant: aiAssistant ? (aiAssistant.initialized ? 'initialized' : 'not_initialized') : 'unavailable'
         };
 
-        // Get comprehensive health status
         let aiAssistantHealth = null;
         if (aiAssistant && aiAssistant.initialized) {
             try {
@@ -2055,7 +1933,6 @@ app.get('/health', async (req, res) => {
             }
         }
 
-        // Get knowledge system health
         let knowledgeHealth = null;
         if (knowledgeRAG && knowledgeRAG.initialized) {
             try {
@@ -2065,7 +1942,6 @@ app.get('/health', async (req, res) => {
             }
         }
 
-        // Get language and formatter status
         let languageStatus = null;
         if (aiAssistant) {
             try {
@@ -2104,7 +1980,6 @@ app.get('/health', async (req, res) => {
     }
 });
 
-// Enhanced WebSocket Manager
 class EnhancedWebSocketManager extends WebSocketManager {
     constructor(io, logger, lineHandler, aiAssistant, chatHistory) {
         super(io, logger, lineHandler, aiAssistant, chatHistory);
@@ -2112,7 +1987,7 @@ class EnhancedWebSocketManager extends WebSocketManager {
         this.keywordProcessingStatus = new Map();
     }
 
-    async handleAIResponseReceived(userId, messageId, response, channelAccessToken) { // Added channelAccessToken
+    async handleAIResponseReceived(userId, messageId, response, channelAccessToken) {
         try {
             const responseText = response?.response || '';
             
@@ -2121,9 +1996,7 @@ class EnhancedWebSocketManager extends WebSocketManager {
                 return;
             }
 
-            // This is the call that's failing. It's missing the token.
             if (this.lineHandler) {
-                // Pass the token to sendAIResponseDirectly. The `null` is for the replyToken.
                 await this.lineHandler.sendAIResponseDirectly(userId, responseText, response, null, channelAccessToken);
                 this.mainMessageSentTimestamps.set(userId, Date.now());
                 
@@ -2135,7 +2008,6 @@ class EnhancedWebSocketManager extends WebSocketManager {
                 });
             }
 
-            // Pass token to delayed image processing
             if (this.lineHandler?.productImageSender && responseText) {
                 setTimeout(async () => {
                     try {
@@ -2154,7 +2026,6 @@ class EnhancedWebSocketManager extends WebSocketManager {
                 }, 10000);
             }
 
-            // Pass token to delayed keyword processing
             if (this.lineHandler?.keywordDetector && responseText) {
                 const keywordKey = `${userId}_${Date.now()}`;
                 if (!this.keywordProcessingStatus.has(userId)) {
@@ -2214,7 +2085,6 @@ class EnhancedWebSocketManager extends WebSocketManager {
     }
 }
 
-// Replace WebSocketManager
 const enhancedWebSocketManager = new EnhancedWebSocketManager(
     io,
     logger,
@@ -2226,7 +2096,6 @@ const enhancedWebSocketManager = new EnhancedWebSocketManager(
 webSocketManager = enhancedWebSocketManager;
 lineHandler.setWebSocketManager(webSocketManager);
 
-// Application initialization
 async function initializeServices() {
     try {
         const requiredDirs = [
@@ -2244,7 +2113,7 @@ async function initializeServices() {
             'uploads/knowledge',
             'uploads/documents',
             'processed_files/images',
-            'src/modules/ai/data' // configuration templates
+            'src/modules/ai/data'
         ];
 
         for (const dir of requiredDirs) {
@@ -2264,7 +2133,6 @@ async function initializeServices() {
         await keywordDetector.loadConfiguration();
         await keywordDetector.loadCustomFlexMessage();
 
-        // Initialize Knowledge Management System
         try {
             await knowledgeRAG.initialize();
             logger.info('✅ Knowledge RAG system initialized successfully');
@@ -2281,7 +2149,6 @@ async function initializeServices() {
     }
 }
 
-// Schedule daily cleanup
 const scheduleDailyCleanup = () => {
     schedule.scheduleJob('0 2 * * *', async () => {
         try {
@@ -2294,7 +2161,6 @@ const scheduleDailyCleanup = () => {
             const imageCleanup = imageHandler.cleanup();
             logger.info('ImageHandler cleanup completed', imageCleanup);
 
-            // Knowledge system cleanup if available
             if (knowledgeRAG && knowledgeRAG.initialized) {
                 try {
                     const knowledgeStats = await knowledgeRAG.getStatistics();
@@ -2304,7 +2170,6 @@ const scheduleDailyCleanup = () => {
                 }
             }
 
-            // AI Assistant cleanup
             if (aiAssistant) {
                 try {
                     aiAssistant.clearCache();
@@ -2320,7 +2185,6 @@ const scheduleDailyCleanup = () => {
     });
 };
 
-// Graceful shutdown
 process.on('SIGTERM', async () => {
     logger.info('SIGTERM received, starting graceful shutdown...');
     try {
@@ -2354,7 +2218,6 @@ process.on('SIGTERM', async () => {
     }
 });
 
-// Start the application
 (async () => {
     try {
         await initializeServices();
@@ -2380,10 +2243,9 @@ process.on('SIGTERM', async () => {
             logger.info(`🔑 Keyword Manager: http://localhost:${PORT}/keyword-manager`);
             logger.info(`📚 Knowledge Manager: http://localhost:${PORT}/knowledge-manager`);
             logger.info(`🎛️ Unified Formatter Manager: http://localhost:${PORT}/unified-formatter-manager`);
-            logger.info(`⚙️ Configuration Manager: http://localhost:${PORT}/configuration-manager`); // เพิ่ม log สำหรับ configuration manager
+            logger.info(`⚙️ Configuration Manager: http://localhost:${PORT}/configuration-manager`);
             logger.info('🔗 Service connections established');
             
-            // Test connection on startup
             setTimeout(async () => {
                 try {
                     const testMessage = "ทดสอบการเชื่อมต่อ https://hongthaipackaging.com/product/paper-glasses-4-oz/ ระบบ";
@@ -2412,7 +2274,6 @@ process.on('SIGTERM', async () => {
                         });
                     }
 
-                    // Test knowledge system
                     if (knowledgeRAG && knowledgeRAG.initialized) {
                         try {
                             const knowledgeHealth = await knowledgeRAG.healthCheck();
@@ -2426,7 +2287,6 @@ process.on('SIGTERM', async () => {
                         }
                     }
 
-                    // Test AI Assistant with Knowledge RAG
                     if (aiAssistant && aiAssistant.initialized) {
                         try {
                             const aiHealth = await aiAssistant.healthCheck();
@@ -2437,7 +2297,6 @@ process.on('SIGTERM', async () => {
                                 unifiedFormatterAvailable: aiHealth.unifiedFormatter?.available || false
                             });
 
-                            // Test unified context formatting
                             if (aiAssistant.unifiedContextFormatter) {
                                 const unifiedTest = await aiAssistant.testUnifiedContext("test query", [], []);
                                 logger.info('✅ Unified context formatter test completed', {
