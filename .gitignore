@@ -35,5 +35,5 @@ yarn-error.log*
 /products/product_stats.json
 
 # Claude settings
-.claude/
 **/package-lock.json
+/src/modules/ai/data
