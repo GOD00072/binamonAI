@@ -1,6 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AuthUser, Role } from '../models/auth';
 import { createUser, updateUser } from '../services/adminService';
+import { Form, Input, Select, Button, Switch, Alert } from 'antd';
+
+const { Option } = Select;
 
 interface UserFormProps {
     user: AuthUser | null;
@@ -10,40 +13,38 @@ interface UserFormProps {
 }
 
 const UserForm: React.FC<UserFormProps> = ({ user, roles, onSuccess, onCancel }) => {
-    const [formData, setFormData] = useState({
-        username: user?.username || '',
-        employeeId: user?.employeeId || '',
-        password: '',
-        roleId: user?.roleId || roles[0]?.id || '',
-    });
+    const [form] = Form.useForm();
     const [error, setError] = useState<string | null>(null);
     const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        setFormData({ ...formData, [e.target.name]: e.target.value });
-    };
+    useEffect(() => {
+        if (user) {
+            form.setFieldsValue({
+                username: user.username,
+                employeeId: user.employeeId,
+                roleId: user.roleId,
+                isActive: user.isActive,
+            });
+        } else {
+            form.resetFields();
+            form.setFieldsValue({ isActive: true });
+        }
+    }, [user, form]);
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const handleSubmit = async (values: any) => {
         setIsSubmitting(true);
         setError(null);
 
         try {
             if (user) {
-                // Update user
-                const updatedData: any = {
-                    username: formData.username,
-                    employeeId: formData.employeeId,
-                    roleId: formData.roleId,
-                };
-                if (formData.password) {
-                    updatedData.password = formData.password;
+                const updatedData = { ...values };
+                if (!updatedData.password) {
+                    delete updatedData.password;
                 }
                 const updatedUser = await updateUser(user.id, updatedData);
                 onSuccess(updatedUser);
             } else {
-                // Create user
-                const newUser = await createUser(formData);
+                const newUser = await createUser(values);
                 onSuccess(newUser);
             }
         } catch (err) {
@@ -55,75 +56,68 @@ const UserForm: React.FC<UserFormProps> = ({ user, roles, onSuccess, onCancel })
     };
 
     return (
-        <form onSubmit={handleSubmit} className="p-4 space-y-4">
-            <h2 className="text-2xl font-bold">{user ? 'Edit User' : 'Create User'}</h2>
+        <Form
+            form={form}
+            layout="vertical"
+            onFinish={handleSubmit}
+            initialValues={{
+                isActive: true,
+                roleId: roles[0]?.id,
+            }}
+        >
+            <h2 className="text-2xl font-bold mb-4">{user ? 'Edit User' : 'Create User'}</h2>
 
-            {error && <div className="text-red-500 bg-red-100 p-3 rounded">{error}</div>}
+            {error && <Alert message={error} type="error" showIcon className="mb-4" />}
 
-            <div>
-                <label className="block text-sm font-medium text-gray-700">Username</label>
-                <input
-                    type="text"
-                    name="username"
-                    value={formData.username}
-                    onChange={handleChange}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                    required
-                />
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700">Employee ID</label>
-                <input
-                    type="text"
-                    name="employeeId"
-                    value={formData.employeeId}
-                    onChange={handleChange}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                    required
-                />
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700">Password</label>
-                <input
-                    type="password"
-                    name="password"
-                    value={formData.password}
-                    onChange={handleChange}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                    placeholder={user ? 'Leave blank to keep current password' : ''}
-                />
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700">Role</label>
-                <select
-                    name="roleId"
-                    value={formData.roleId}
-                    onChange={handleChange}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                >
+            <Form.Item
+                name="username"
+                label="Username"
+                rules={[{ required: true, message: 'Please input the username!' }]}
+            >
+                <Input />
+            </Form.Item>
+
+            <Form.Item
+                name="employeeId"
+                label="Employee ID"
+                rules={[{ required: true, message: 'Please input the employee ID!' }]}
+            >
+                <Input />
+            </Form.Item>
+
+            <Form.Item
+                name="password"
+                label="Password"
+                rules={[{ required: !user, message: 'Password is required for new users!' }]}
+            >
+                <Input.Password placeholder={user ? 'Leave blank to keep current password' : ''} />
+            </Form.Item>
+
+            <Form.Item
+                name="roleId"
+                label="Role"
+                rules={[{ required: true, message: 'Please select a role!' }]}
+            >
+                <Select>
                     {roles.map(role => (
-                        <option key={role.id} value={role.id}>{role.name}</option>
+                        <Option key={role.id} value={role.id}>{role.name}</Option>
                     ))}
-                </select>
-            </div>
+                </Select>
+            </Form.Item>
+
+            <Form.Item name="isActive" label="Status" valuePropName="checked">
+                <Switch checkedChildren="Active" unCheckedChildren="Inactive" />
+            </Form.Item>
+
             <div className="flex justify-end space-x-2 pt-4">
-                <button
-                    type="button"
-                    onClick={onCancel}
-                    className="bg-gray-200 hover:bg-gray-300 text-black font-bold py-2 px-4 rounded"
-                    disabled={isSubmitting}
-                >
+                <Button onClick={onCancel} disabled={isSubmitting}>
                     Cancel
-                </button>
-                <button
-                    type="submit"
-                    className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded"
-                    disabled={isSubmitting}
-                >
+                </Button>
+                <Button type="primary" htmlType="submit" loading={isSubmitting}>
                     {isSubmitting ? 'Saving...' : 'Save'}
-                </button>
+                </Button>
             </div>
-        </form>
+        </Form>
     );
 };
 

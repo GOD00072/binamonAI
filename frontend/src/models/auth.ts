@@ -21,6 +21,7 @@ export interface AuthUser {
     employeeId: string;
     roleId: string;
     role: Role;
+    isActive: boolean;
     createdAt: string;
     updatedAt: string;
 }

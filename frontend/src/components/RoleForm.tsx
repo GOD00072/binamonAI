@@ -1,52 +1,48 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Role, Permission } from '../models/auth';
 import { createRole, updateRole, assignPermissionsToRole } from '../services/adminService';
+import { Form, Input, Button, Checkbox, Alert } from 'antd';
+
+const { TextArea } = Input;
 
 interface RoleFormProps {
     role: Role | null;
-    allPermissions: Permission[];
+    permissions: Permission[];
     onSuccess: (role: Role) => void;
     onCancel: () => void;
 }
 
-const RoleForm: React.FC<RoleFormProps> = ({ role, allPermissions, onSuccess, onCancel }) => {
-    const [formData, setFormData] = useState({
-        name: role?.name || '',
-        description: role?.description || '',
-    });
-    const [selectedPermissionIds, setSelectedPermissionIds] = useState<string[]>(
-        role?.permissions.map(p => p.permission.id) || []
-    );
+const RoleForm: React.FC<RoleFormProps> = ({ role, permissions, onSuccess, onCancel }) => {
+    const [form] = Form.useForm();
     const [error, setError] = useState<string | null>(null);
     const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setFormData({ ...formData, [e.target.name]: e.target.value });
-    };
+    useEffect(() => {
+        if (role) {
+            form.setFieldsValue({
+                name: role.name,
+                description: role.description,
+                permissionIds: role.permissions.map(p => p.permission.id),
+            });
+        } else {
+            form.resetFields();
+        }
+    }, [role, form]);
 
-    const handlePermissionChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const selectedIds = Array.from(e.target.selectedOptions, option => option.value);
-        setSelectedPermissionIds(selectedIds);
-    };
-
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const handleSubmit = async (values: any) => {
         setIsSubmitting(true);
         setError(null);
 
         try {
-            let targetRole = role;
-
+            let savedRole;
             if (role) {
-                // Update existing role
-                targetRole = await updateRole(role.id, formData);
+                const updatedData = { name: values.name, description: values.description };
+                savedRole = await updateRole(role.id, updatedData);
             } else {
-                // Create new role
-                targetRole = await createRole(formData);
+                savedRole = await createRole(values);
             }
-
-            // Assign permissions
-            const finalRole = await assignPermissionsToRole(targetRole.id, selectedPermissionIds);
+            await assignPermissionsToRole(savedRole.id, values.permissionIds || []);
+            const finalRole = { ...savedRole, permissions: permissions.filter(p => values.permissionIds.includes(p.id)).map(p => ({ permission: p })) };
             onSuccess(finalRole);
 
         } catch (err) {
@@ -58,63 +54,51 @@ const RoleForm: React.FC<RoleFormProps> = ({ role, allPermissions, onSuccess, on
     };
 
     return (
-        <form onSubmit={handleSubmit} className="p-4 space-y-4">
-            <h2 className="text-2xl font-bold">{role ? 'Edit Role' : 'Create Role'}</h2>
+        <Form
+            form={form}
+            layout="vertical"
+            onFinish={handleSubmit}
+        >
+            <h2 className="text-2xl font-bold mb-4">{role ? 'Edit Role' : 'Create Role'}</h2>
 
-            {error && <div className="text-red-500 bg-red-100 p-3 rounded">{error}</div>}
+            {error && <Alert message={error} type="error" showIcon className="mb-4" />}
 
-            <div>
-                <label className="block text-sm font-medium text-gray-700">Role Name</label>
-                <input
-                    type="text"
-                    name="name"
-                    value={formData.name}
-                    onChange={handleChange}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                    required
-                />
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700">Description</label>
-                <input
-                    type="text"
-                    name="description"
-                    value={formData.description}
-                    onChange={handleChange}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                />
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700">Permissions</label>
-                <select
-                    multiple
-                    value={selectedPermissionIds}
-                    onChange={handlePermissionChange}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm h-60"
-                >
-                    {allPermissions.map(p => (
-                        <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                </select>
-            </div>
+            <Form.Item
+                name="name"
+                label="Role Name"
+                rules={[{ required: true, message: 'Please input the role name!' }]}
+            >
+                <Input />
+            </Form.Item>
+
+            <Form.Item
+                name="description"
+                label="Description"
+            >
+                <TextArea rows={4} />
+            </Form.Item>
+
+            <Form.Item name="permissionIds" label="Permissions">
+                <Checkbox.Group className="w-full">
+                    <div className="grid grid-cols-2 gap-2">
+                        {permissions.map(permission => (
+                            <Checkbox key={permission.id} value={permission.id}>
+                                {permission.name}
+                            </Checkbox>
+                        ))}
+                    </div>
+                </Checkbox.Group>
+            </Form.Item>
+
             <div className="flex justify-end space-x-2 pt-4">
-                <button
-                    type="button"
-                    onClick={onCancel}
-                    className="bg-gray-200 hover:bg-gray-300 text-black font-bold py-2 px-4 rounded"
-                    disabled={isSubmitting}
-                >
+                <Button onClick={onCancel} disabled={isSubmitting}>
                     Cancel
-                </button>
-                <button
-                    type="submit"
-                    className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded"
-                    disabled={isSubmitting}
-                >
+                </Button>
+                <Button type="primary" htmlType="submit" loading={isSubmitting}>
                     {isSubmitting ? 'Saving...' : 'Save'}
-                </button>
+                </Button>
             </div>
-        </form>
+        </Form>
     );
 };
 
