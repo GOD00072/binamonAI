@@ -31,9 +31,13 @@ class VectorDBService {
         }
 
         try {
-            this.openai = new OpenAI({
-                apiKey: process.env.OPENAI_API_KEY
-            });
+            if (apiKey) {
+                this.openai = new OpenAI({ apiKey });
+                this.logger.info('OpenAI client initialized for VectorDBService.');
+            } else {
+                this.openai = null;
+                this.logger.warn('VectorDBService initialized without an OpenAI API key. Embedding functionality will be disabled.');
+            }
 
             // Ensure LanceDB directory exists
             await fs.mkdir(this.dbPath, { recursive: true });
@@ -130,6 +134,9 @@ class VectorDBService {
     }
 
     async getEmbedding(text) {
+        if (!this.openai) {
+            throw new Error('OpenAI client is not initialized. Please provide an API key in the Vector DB configuration.');
+        }
         const cacheKey = `emb_${Buffer.from(text).toString('base64')}`;
         const cached = this.embedCache.get(cacheKey);
         if (cached) return cached;

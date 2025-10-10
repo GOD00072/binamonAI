@@ -9,6 +9,7 @@ const socketIo = require('socket.io');
 const fs = require('fs').promises;
 const axios = require('axios');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { PrismaClient } = require('@prisma/client');
 const schedule = require('node-schedule');
 require('dotenv').config();
 
@@ -43,6 +44,7 @@ const lineApiRoutes = require('../modules/messaging/routes/lineApiRoutes');
 const vectorDBRoutes = require('../modules/knowledge/routes/vectorDBRoutes');
 const documentRoutes = require('../modules/knowledge/routes/documentRoutes');
 const contextWindowRoutes = require('../modules/ai/routes/contextWindowRoutes');
+const createLineOaConfigRoutes = require('../modules/messaging/routes/lineOaConfigRoutes');
 
 // Import service modules
 const ChatHistoryManager = require('../modules/chat/services/chatHistoryManager');
@@ -128,6 +130,9 @@ const io = socketIo(server, {
 
 global.io = io;
 
+const prisma = new PrismaClient();
+app.locals.prisma = prisma;
+
 // Initialize service instances
 const messageHandler = new MessageHandler(logger);
 const chatHistory = new ChatHistoryManager(logger);
@@ -192,6 +197,11 @@ logger.info('✅ Service connections established');
 
 
 app.use(cors());
+
+// Middleware to parse raw body for webhook signature validation
+// This MUST come before the global express.json() middleware
+app.use('/webhook/line/:oaId', express.raw({ type: 'application/json' }));
+
 app.use(express.json({ limit: '64mb' }));
 app.use(express.urlencoded({ limit: '64mb', extended: true }));
 app.use(morgan('dev'));
@@ -255,7 +265,8 @@ const routes = {
   lineApi: lineApiRoutes,
   documents: documentRoutes(logger),
   contextWindow: contextWindowRoutes(logger),
-  productSearchConfig: productSearchConfigRoutes(logger)
+  productSearchConfig: productSearchConfigRoutes(logger),
+  lineOaConfig: createLineOaConfigRoutes(logger)
 };
 
 // Register routes
@@ -288,7 +299,8 @@ app.use('/api/line', routes.lineApi);
 app.use('/api/vector-db', routes.vectorDB);
 app.use('/api/documents', routes.documents);
 app.use('/api/context-window', routes.contextWindow);
-app.use('/api/product-search-config', routes.productSearchConfig); 
+app.use('/api/product-search-config', routes.productSearchConfig);
+app.use('/api/line-oa-configs', routes.lineOaConfig); 
 
 
 
@@ -351,6 +363,72 @@ app.get('/api/gemini/models', async (req, res) => {
        res.status(500).json({
            success: false,
            error: 'Failed to fetch Gemini models',
+           details: error.message
+       });
+   }
+});
+
+app.post('/api/gemini/models/fetch', express.json(), async (req, res) => {
+   try {
+       const { apiKey } = req.body;
+
+       if (!apiKey) {
+           return res.status(400).json({
+               success: false,
+               error: 'apiKey is required to fetch models.'
+           });
+       }
+
+       const response = await axios.get(
+           'https://generativelanguage.googleapis.com/v1/models',
+           {
+               params: {
+                   key: apiKey
+               },
+               timeout: 15000
+           }
+       );
+
+       if (response.data && response.data.models) {
+           const models = response.data.models.map(model => {
+               const name = model.name.replace('models/', '');
+               return {
+                   name: name,
+                   displayName: model.displayName || name,
+                   description: model.description || '',
+                   version: model.version || 'latest',
+                   inputTokenLimit: model.inputTokenLimit || 0,
+                   outputTokenLimit: model.outputTokenLimit || 0,
+                   supportedGenerationMethods: model.supportedGenerationMethods || []
+               };
+           });
+
+           const visionModels = models.filter(model => {
+               const name = model.name.toLowerCase();
+               return (
+                   model.supportedGenerationMethods.includes('generateContent') &&
+                   (name.includes('vision') || name.includes('pro') || name.includes('flash') || name.includes('1.5'))
+               );
+           });
+
+           res.json({
+               success: true,
+               totalModels: models.length,
+               visionModels: visionModels.length,
+               models: {
+                   all: models,
+                   vision: visionModels
+               },
+               timestamp: Date.now()
+           });
+       } else {
+           throw new Error('Invalid response format from Gemini API');
+       }
+   } catch (error) {
+       logger.error('Error fetching Gemini models with provided key:', error);
+       res.status(500).json({
+           success: false,
+           error: 'Failed to fetch Gemini models. The API key may be invalid or lack permissions.',
            details: error.message
        });
    }
@@ -1580,27 +1658,68 @@ app.get('/api/product-images/images/:filename', async (req, res) => {
 });
 
 // Webhook endpoint
-app.post('/webhook', async (req, res) => {
- try {
-     const events = req.body.events || [];
-     
-     await Promise.all(events.map(async (event) => {
-         if (event.type === 'message') {
-             await lineHandler.handleMessage(event);
-         } else if (event.type === 'postback') {
-             await keywordDetector.handlePostback({
-                 data: event.postback.data,
-                 userId: event.source.userId
-             });
-         }
-     }));
-     
-     res.status(200).end();
- } catch (error) {
-     logger.error('Webhook processing error:', error);
-     res.status(500).json({ error: 'Internal server error' });
- }
+
+const crypto = require('crypto');
+
+// Dynamic Webhook endpoint for Multi-OA support
+app.post('/webhook/line/:oaId', async (req, res) => {
+    const { oaId } = req.params;
+    const signature = req.headers['x-line-signature'];
+    const body = req.body;
+
+    if (!signature) {
+        return res.status(401).json({ error: 'Signature not found' });
+    }
+
+    try {
+        // Fetch OA configuration from the database
+        const oaConfig = await app.locals.prisma.lineOaConfig.findUnique({
+            where: { id: oaId },
+        });
+
+        if (!oaConfig) {
+            logger.error(`Webhook received for unknown OA ID: ${oaId}`);
+            return res.status(404).json({ error: 'LINE OA configuration not found' });
+        }
+
+        // Validate webhook signature
+        const channelSecret = oaConfig.channelSecret;
+        const hash = crypto.createHmac('sha256', channelSecret).update(body).digest('base64');
+
+        if (hash !== signature) {
+            logger.error(`Invalid webhook signature for OA ID: ${oaId}`);
+            return res.status(403).json({ error: 'Invalid signature' });
+        }
+
+        const events = JSON.parse(body.toString()).events || [];
+
+        // Pass the channelAccessToken to the handler
+        await Promise.all(events.map(async (event) => {
+            // Add channelAccessToken to the event object for the handler to use
+            event.channelAccessToken = oaConfig.channelAccessToken;
+
+            if (event.type === 'message') {
+                await lineHandler.handleMessage(event);
+            } else if (event.type === 'postback') {
+                await keywordDetector.handlePostback({
+                    data: event.postback.data,
+                    userId: event.source.userId,
+                    channelAccessToken: oaConfig.channelAccessToken // Pass token here as well
+                });
+            }
+        }));
+
+        res.status(200).end();
+    } catch (error) {
+        logger.error('Webhook processing error:', { 
+            errorMessage: error.message,
+            stack: error.stack,
+            oaId: oaId
+        });
+        res.status(500).json({ error: 'Internal server error' });
+    }
 });
+
 
 // Socket.IO WebSocket configuration
 io.on('connection', (socket) => {
@@ -1993,7 +2112,7 @@ class EnhancedWebSocketManager extends WebSocketManager {
         this.keywordProcessingStatus = new Map();
     }
 
-    async handleAIResponseReceived(userId, messageId, response) {
+    async handleAIResponseReceived(userId, messageId, response, channelAccessToken) { // Added channelAccessToken
         try {
             const responseText = response?.response || '';
             
@@ -2002,9 +2121,10 @@ class EnhancedWebSocketManager extends WebSocketManager {
                 return;
             }
 
-            // ส่งข้อความหลักทันที
+            // This is the call that's failing. It's missing the token.
             if (this.lineHandler) {
-                await this.lineHandler.sendAIResponseDirectly(userId, responseText, response, null);
+                // Pass the token to sendAIResponseDirectly. The `null` is for the replyToken.
+                await this.lineHandler.sendAIResponseDirectly(userId, responseText, response, null, channelAccessToken);
                 this.mainMessageSentTimestamps.set(userId, Date.now());
                 
                 this.io.emit('ai_response_sent', {
@@ -2015,11 +2135,11 @@ class EnhancedWebSocketManager extends WebSocketManager {
                 });
             }
 
-            // ส่งรูปหลังจาก 10 วินาที
+            // Pass token to delayed image processing
             if (this.lineHandler?.productImageSender && responseText) {
                 setTimeout(async () => {
                     try {
-                        const imageResult = await this.lineHandler.productImageSender.processOutgoingMessage(userId, responseText);
+                        const imageResult = await this.lineHandler.productImageSender.processOutgoingMessage(userId, responseText, channelAccessToken);
                         
                         if (imageResult.processed && imageResult.imagesSent > 0) {
                             this.io.emit('product_images_sent_after_message', {
@@ -2034,7 +2154,7 @@ class EnhancedWebSocketManager extends WebSocketManager {
                 }, 10000);
             }
 
-            // ประมวลผล keyword หลังจาก 15 วินาที
+            // Pass token to delayed keyword processing
             if (this.lineHandler?.keywordDetector && responseText) {
                 const keywordKey = `${userId}_${Date.now()}`;
                 if (!this.keywordProcessingStatus.has(userId)) {
@@ -2043,7 +2163,7 @@ class EnhancedWebSocketManager extends WebSocketManager {
                     setTimeout(async () => {
                         try {
                             if (this.keywordProcessingStatus.get(userId) === keywordKey) {
-                                await this.lineHandler.keywordDetector.processOutgoingMessage(userId, responseText);
+                                await this.lineHandler.keywordDetector.processOutgoingMessage(userId, responseText, channelAccessToken);
                                 this.keywordProcessingStatus.delete(userId);
                             }
                         } catch (keywordError) {

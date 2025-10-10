@@ -429,28 +429,36 @@ model Document {
 // Context Window Model - การตั้งค่า System Prompt และ Context สำหรับ RAG
 model ContextWindow {
   id                  String   @id @default(uuid())
-  key                 String   @unique @default("default")
+  name                String   @unique
 
   // System Prompt
   system_prompt       String   @default("คุณคือผู้ช่วยที่ชาญฉลาดในการให้ข้อมูลเกี่ยวกับสินค้า")
 
   // RAG Settings
-  use_product_rag     Boolean  @default(true)   // ใช้ Product RAG หรือไม่
-  use_knowledge_rag   Boolean  @default(true)   // ใช้ Knowledge RAG หรือไม่
+  use_product_rag     Boolean  @default(true)
+  use_knowledge_rag   Boolean  @default(true)
 
   // Context Settings
-  max_context_messages Int     @default(10)     // จำนวนข้อความย้อนหลังที่จะใช้
-  include_user_history Boolean @default(true)   // รวมประวัติผู้ใช้หรือไม่
+  max_context_messages Int     @default(10)
+  include_user_history Boolean @default(true)
 
-  // Temperature & Model Settings
+  // Text Model Settings
   temperature         Float    @default(0.7)
-  model_name          String   @default("gpt-4")
+  text_model_name     String   @default("gpt-4")
   max_tokens          Int      @default(2000)
+
+  // Image Model Settings
+  image_model_name    String?  @default("gemini-pro-vision")
+  image_prompt        String?  @default("ช่วยอธิบายรูปภาพนี้อย่างละเอียด")
+  text_api_key        String?  // Optional, encrypted
+  image_api_key       String?  // Optional, encrypted
 
   // Metadata
   created_at          DateTime @default(now())
   last_updated        DateTime @updatedAt
 
+  // Relation to LineOaConfig
+  lineOaConfigs       LineOaConfig[]
 }
 
 model AuthUser {
@@ -461,4 +469,18 @@ model AuthUser {
   role        String   @default("user")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+model LineOaConfig {
+  id                  String   @id @default(uuid())
+  name                String   @unique
+  channelId           String   @unique
+  channelSecret       String
+  channelAccessToken  String
+
+  contextWindowId     String?
+  contextWindow       ContextWindow? @relation(fields: [contextWindowId], references: [id])
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 }

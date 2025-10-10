@@ -34,7 +34,7 @@ import {
 } from '../components/Icons';
 
 // Import modularized components and functions
-import { apiService } from './DashboardModels/apiService';
+import { dashboardApi, ragApi, systemApi } from '../services/api';
 import { SyncResult, SearchFilters } from './DashboardModels/types';
 import { InterestChart, MovementStatusChart, StockLevelChart, StockMovementChart } from './DashboardModels/ChartComponents';
 import { ProductTable, SearchForm, SyncProgress } from './DashboardModels/UIComponents';
@@ -97,14 +97,9 @@ const AIChatSidebar: React.FC <{
 
   const testAIConnection = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/ai/status', {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        mode: 'cors',
-        credentials: 'omit'
-      });
+      const response = await systemApi.getAIStatus();
 
-      if (response.ok) {
+      if (response.success) {
         setMessages(prev => prev.slice(0, -1)); // Remove test message
         setMessages(prev => [...prev, {
           sender: '✅ System',
@@ -126,27 +121,10 @@ const AIChatSidebar: React.FC <{
 
   const loadCurrentAIMode = async () => {
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const response = await ragApi.getAIMode();
 
-      const response = await fetch('http://localhost:3001/api/rag/ai-mode', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      if (data.success) {
-        setCurrentAIMode(data.currentMode);
+      if (response.success && response.data) {
+        setCurrentAIMode(response.data.currentMode);
       }
     } catch (error) {
       console.warn('Could not load AI mode, using default:', error);
@@ -239,42 +217,24 @@ const AIChatSidebar: React.FC <{
       console.log('Sending request with AI mode:', currentAIMode);
       console.log('Question:', contextualQuestion);
 
-      const baseUrl = 'http://localhost:3001/api';
-      const endpoint = '/rag/question'; // ใช้ endpoint ใหม่ที่รองรับโหมด
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-
-      const response = await fetch(`${baseUrl}${endpoint}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        mode: 'cors',
-        credentials: 'omit',
-        signal: controller.signal,
-        body: JSON.stringify({
-          question: contextualQuestion,
-          aiMode: currentAIMode,
-          maxProducts: modeConfig[currentAIMode as keyof typeof modeConfig]?.maxProducts,
-          includeContext: true,
-          useEnhancedRanking: true,
-          filters: {}
-        })
+      const response = await ragApi.askQuestion({
+        question: contextualQuestion,
+        aiMode: currentAIMode,
+        maxProducts: modeConfig[currentAIMode as keyof typeof modeConfig]?.maxProducts,
+        includeContext: true,
+        useEnhancedRanking: true,
+        filters: {}
       });
-
-      clearTimeout(timeoutId);
 
       console.log('Response status:', response.status);
 
-      if (!response.ok) {
-        const errorText = await response.text();
+      if (!response.success) {
+        const errorText = response.error || 'Unknown error';
         console.error('API Error:', errorText);
         throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
 
-      const data = await response.json();
+      const data = response.data;
       console.log('Response data:', data);
 
       // Remove loading message
@@ -734,29 +694,27 @@ const DashboardPage: React.FC = () => {
    setLoading(true);
    setError(null);
 
-   const controller = new AbortController();
-   const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 นาที
    try {
      let result;
      switch (tabKey) {
        case 'dashboard':
          const [dashboardData, slowMoveData] = await Promise.all([
-           apiService.getDashboard(),
-           apiService.getSlowMoveAnalysis()
+           dashboardApi.getDashboard(),
+           dashboardApi.getSlowMoveAnalysis()
          ]);
          result = { ...dashboardData, slowMoveAnalysisData: slowMoveData };
          break;
        case 'products': 
-         result = await apiService.getFullAnalysis(); 
+         result = await dashboardApi.getFullAnalysis(); 
          break;
-       case 'quality': result = await apiService.getQualityInteractions(); break;
-       case 'hot': result = await apiService.getHotProducts(); break;
-       case 'slow-move': result = await apiService.getSlowMoveAnalysis(); break;
-       case 'movement': result = await apiService.getMovementAnalysis(); break;
-       case 'stock-status': result = await apiService.getStockStatus(); break;
-       case 'interactions': result = await apiService.getInteractions(); break;
-       case 'debug': result = await apiService.getDebugMapping(); break;
-       default: result = await apiService.getDashboard();
+       case 'quality': result = await dashboardApi.getQualityInteractions(); break;
+       case 'hot': result = await dashboardApi.getHotProducts(); break;
+       case 'slow-move': result = await dashboardApi.getSlowMoveAnalysis(); break;
+       case 'movement': result = await dashboardApi.getMovementAnalysis(); break;
+       case 'stock-status': result = await dashboardApi.getStockStatus(); break;
+       case 'interactions': result = await dashboardApi.getInteractions(); break;
+       case 'debug': result = await dashboardApi.getDebugMapping(); break;
+       default: result = await dashboardApi.getDashboard();
      }
      setData(result);
      setActiveTab(tabKey);
@@ -764,7 +722,6 @@ const DashboardPage: React.FC = () => {
      setError((err as Error).message);
    } finally {
      setLoading(false);
-     clearTimeout(timeoutId);
    }
  };
 
@@ -777,9 +734,9 @@ const DashboardPage: React.FC = () => {
    try {
      let result: SyncResult;
      if (skus && skus.length > 0) {
-       result = await apiService.syncStock(skus);
+       result = await dashboardApi.syncStock(skus);
      } else {
-       result = await apiService.syncAllStock();
+       result = await dashboardApi.syncAllStock();
      }
      
      setSyncProgress(100);
@@ -799,7 +756,7 @@ const DashboardPage: React.FC = () => {
  const handleSearch = async (filters: SearchFilters) => {
    setLoading(true);
    try {
-     const result = await apiService.searchProducts(filters);
+     const result = await dashboardApi.searchProducts(filters);
      setSearchResults(result);
      setActiveTab('search');
    } catch (err) {

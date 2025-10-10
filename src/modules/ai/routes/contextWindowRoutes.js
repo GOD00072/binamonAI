@@ -1,182 +1,116 @@
-// routes/contextWindowRoutes.js
 'use strict';
 
 const express = require('express');
 const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
-const fs = require('fs').promises;
-const path = require('path');
 
 const prisma = new PrismaClient();
 
 module.exports = (logger) => {
-    // Helper function to get ConfigManager default values
-    const getConfigManagerDefaults = async () => {
-        try {
-            const configManagerPath = path.join(__dirname, '..', 'aiservices', 'ConfigManager.js');
-            const ConfigManager = require(configManagerPath);
-            const tempConfig = new ConfigManager(logger);
 
-            return {
-                model_name: tempConfig.MODEL_NAME,
-                temperature: tempConfig.generationConfig.temperature,
-                max_tokens: tempConfig.generationConfig.maxOutputTokens,
-                topK: tempConfig.generationConfig.topK,
-                topP: tempConfig.generationConfig.topP
-            };
-        } catch (error) {
-            logger.warn('Could not load ConfigManager defaults, using fallback values');
-            return {
-                model_name: 'gemini-2.5-pro',
-                temperature: 0.7,
-                max_tokens: 2000,
-                topK: 60,
-                topP: 0.6
-            };
-        }
-    };
-
-    // GET /api/context-window - Get context window config
+    // GET /api/context-window - Get all context window configs
     router.get('/', async (req, res) => {
         try {
-            let config = await prisma.contextWindow.findUnique({
-                where: { key: 'default' }
-            });
+            const configs = await prisma.contextWindow.findMany();
+            res.json({ success: true, data: configs });
+        } catch (error) {
+            logger.error('Error fetching context window configs:', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
 
-            // Create default config if not exists, using ConfigManager values
-            if (!config) {
-                const defaults = await getConfigManagerDefaults();
-
-                config = await prisma.contextWindow.create({
-                    data: {
-                        key: 'default',
-                        system_prompt: 'คุณคือผู้ช่วยที่ชาญฉลาดในการให้ข้อมูลเกี่ยวกับสินค้า ใช้ข้อมูลจากฐานความรู้และสินค้าเพื่อตอบคำถามอย่างถูกต้องและเป็นประโยชน์',
-                        use_product_rag: true,
-                        use_knowledge_rag: true,
-                        max_context_messages: 10,
-                        include_user_history: true,
-                        temperature: defaults.temperature,
-                        model_name: defaults.model_name,
-                        max_tokens: defaults.max_tokens
-                    }
-                });
+    // POST /api/context-window - Create a new context window config
+    router.post('/', async (req, res) => {
+        try {
+            const { name, system_prompt, use_product_rag, use_knowledge_rag, max_context_messages, include_user_history, temperature, text_model_name, max_tokens, image_model_name, image_prompt, text_api_key, image_api_key } = req.body;
+            if (!name) {
+                return res.status(400).json({ success: false, error: 'Name is a required field.' });
             }
-
-            res.json({
-                success: true,
-                config: config
-            });
-        } catch (error) {
-            logger.error('Error fetching context window config:', error);
-            res.status(500).json({
-                success: false,
-                error: error.message
-            });
-        }
-    });
-
-    // PUT /api/context-window - Update context window config
-    router.put('/', async (req, res) => {
-        try {
-            const {
-                system_prompt,
-                use_product_rag,
-                use_knowledge_rag,
-                max_context_messages,
-                include_user_history,
-                temperature,
-                model_name,
-                max_tokens
-            } = req.body;
-
-            const config = await prisma.contextWindow.upsert({
-                where: { key: 'default' },
-                update: {
+            const newConfig = await prisma.contextWindow.create({
+                data: {
+                    name,
                     system_prompt,
                     use_product_rag,
                     use_knowledge_rag,
                     max_context_messages,
                     include_user_history,
                     temperature,
-                    model_name,
-                    max_tokens
-                },
-                create: {
-                    key: 'default',
+                    text_model_name,
+                    max_tokens,
+                    image_model_name,
+                    image_prompt,
+                    text_api_key,
+                    image_api_key
+                }
+            });
+            res.status(201).json({ success: true, data: newConfig });
+        } catch (error) {
+            logger.error('Error creating context window config:', error);
+            if (error.code === 'P2002') { // Unique constraint violation
+                return res.status(409).json({ success: false, error: `A configuration with the name '${req.body.name}' already exists.` });
+            }
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // GET /api/context-window/:id - Get a single context window config
+    router.get('/:id', async (req, res) => {
+        try {
+            const { id } = req.params;
+            const config = await prisma.contextWindow.findUnique({ where: { id } });
+            if (!config) {
+                return res.status(404).json({ success: false, error: 'Configuration not found.' });
+            }
+            res.json({ success: true, data: config });
+        } catch (error) {
+            logger.error(`Error fetching context window config ${req.params.id}:`, error);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // PUT /api/context-window/:id - Update a context window config
+    router.put('/:id', async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { name, system_prompt, use_product_rag, use_knowledge_rag, max_context_messages, include_user_history, temperature, text_model_name, max_tokens, image_model_name, image_prompt, text_api_key, image_api_key } = req.body;
+            
+            const updatedConfig = await prisma.contextWindow.update({
+                where: { id },
+                data: {
+                    name,
                     system_prompt,
                     use_product_rag,
                     use_knowledge_rag,
                     max_context_messages,
                     include_user_history,
                     temperature,
-                    model_name,
-                    max_tokens
+                    text_model_name,
+                    max_tokens,
+                    image_model_name,
+                    image_prompt,
+                    text_api_key,
+                    image_api_key
                 }
             });
-
-            logger.info('Context window config updated successfully');
-
-            res.json({
-                success: true,
-                config: config,
-                message: 'บันทึกการตั้งค่าสำเร็จ'
-            });
+            res.json({ success: true, data: updatedConfig });
         } catch (error) {
-            logger.error('Error updating context window config:', error);
-            res.status(500).json({
-                success: false,
-                error: error.message
-            });
+            logger.error(`Error updating context window config ${req.params.id}:`, error);
+            if (error.code === 'P2002') { // Unique constraint violation
+                return res.status(409).json({ success: false, error: `A configuration with the name '${req.body.name}' already exists.` });
+            }
+            res.status(500).json({ success: false, error: error.message });
         }
     });
 
-    // POST /api/context-window/reset - Reset to default (using ConfigManager defaults)
-    router.post('/reset', async (req, res) => {
+    // DELETE /api/context-window/:id - Delete a context window config
+    router.delete('/:id', async (req, res) => {
         try {
-            const defaults = await getConfigManagerDefaults();
-
-            const config = await prisma.contextWindow.upsert({
-                where: { key: 'default' },
-                update: {
-                    system_prompt: 'คุณคือผู้ช่วยที่ชาญฉลาดในการให้ข้อมูลเกี่ยวกับสินค้า ใช้ข้อมูลจากฐานความรู้และสินค้าเพื่อตอบคำถามอย่างถูกต้องและเป็นประโยชน์',
-                    use_product_rag: true,
-                    use_knowledge_rag: true,
-                    max_context_messages: 10,
-                    include_user_history: true,
-                    temperature: defaults.temperature,
-                    model_name: defaults.model_name,
-                    max_tokens: defaults.max_tokens
-                },
-                create: {
-                    key: 'default',
-                    system_prompt: 'คุณคือผู้ช่วยที่ชาญฉลาดในการให้ข้อมูลเกี่ยวกับสินค้า ใช้ข้อมูลจากฐานความรู้และสินค้าเพื่อตอบคำถามอย่างถูกต้องและเป็นประโยชน์',
-                    use_product_rag: true,
-                    use_knowledge_rag: true,
-                    max_context_messages: 10,
-                    include_user_history: true,
-                    temperature: defaults.temperature,
-                    model_name: defaults.model_name,
-                    max_tokens: defaults.max_tokens
-                }
-            });
-
-            logger.info('Context window config reset to default (using ConfigManager values)', {
-                model_name: defaults.model_name,
-                temperature: defaults.temperature,
-                max_tokens: defaults.max_tokens
-            });
-
-            res.json({
-                success: true,
-                config: config,
-                message: 'รีเซ็ตการตั้งค่าเป็นค่าเริ่มต้นสำเร็จ (อ้างอิงจาก aiAssistant.js ConfigManager)'
-            });
+            const { id } = req.params;
+            await prisma.contextWindow.delete({ where: { id } });
+            res.status(204).send();
         } catch (error) {
-            logger.error('Error resetting context window config:', error);
-            res.status(500).json({
-                success: false,
-                error: error.message
-            });
+            logger.error(`Error deleting context window config ${req.params.id}:`, error);
+            res.status(500).json({ success: false, error: error.message });
         }
     });
 

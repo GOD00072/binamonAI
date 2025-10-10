@@ -78,5 +78,29 @@
     "is_single_chunk": false,
     "original_text_length": 8117,
     "processing_type": "multi_chunk"
+  },
+  "0590d68e0a15119d679f711979af6283": {
+    "id": "0590d68e0a15119d679f711979af6283",
+    "category": "pdf",
+    "file_name": "123123.pdf",
+    "created_at": "2025-10-06T16:54:17.310Z",
+    "updated_at": "2025-10-06T16:54:17.310Z",
+    "word_count": 198,
+    "namespace": "knowledge",
+    "tags": [
+      "pdf",
+      "document"
+    ],
+    "source": "document_upload",
+    "text": "การวิเคราะหบอทดึงขอมูลสินคา\nสรุปการทํางานของระบบ\nบอทดึงขอมูลเป็นระบบอัตโนมัติที่ทําหนาที่เขาไปดึงขอมูลสินคาจากเว็บไซต WooCommerce\nโดยสามารถเลือกไดวาจะดึงขอมูลสวนไหนบาง พรอมทั้งดาวนโหลดรูปภาพและจัดเก็บขอมูลใน\nรูปแบบ JSON\nขั้นตอนการทํางานหลัก\n1. การรับ URL และตั้งคา\nรับรายการ URL ของสินคาที่ตองการดึงขอมูล\nกําหนด Sync Options วาจะดึงขอมูลอะไรบาง\nสรางโฟลเดอรสําหรับเก็บขอมูลและรูปภาพ\n2. การเขาถึงเว็บไซต\nสง HTTP Request ไปยังแตละ URL\nใช User-Agent เลียนแบบเบราวเซอรจริง\nมีระบบ Retry หากเกิดขอผิดพลาด (ลองใหม 3 ครั้ง)\nตั้ง Timeout 30 วินาทีตอหนา\n3. การแยกขอมูลจากหนาเว็บ\n\nบอทจะคนหาขอมูลในหนาเว็บโดยใช CSS Selectors:\nชื่อสินคา: h1.product-title.product_title.entry-title SKU:\n.sku_wrapper .sku จํานวนสตอก: p.stock.in-stock ราคา:\np.price.product-page-price หมวดหมู: .posted_in a คําอธิบาย:\ndiv.product-short-description\nระบบการเลือกขอมูล (Sync Options)\nตัวเลือก คาเริ่มตน หนาที่\nsyncImages เปิด ดาวนโหลดรูปภาพสินคา\nsyncStock เปิด ดึงจํานวนสินคาคงเหลือ\nsyncPrices เปิด ดึงขอมูลราคาสินคา\nsyncDetails เปิด ดึงรายละเอียดจากตารางขอมูล\nsyncDescriptions เปิด ดึงคําอธิบายสินคา\noverwriteExisting ปิด เขียนทับไฟลเดิมหรือผสานขอมูล\nการจัดการรูปภาพ\nขั้นตอนการดึงรูปภาพ\n1. คนหารูปภาพหลัก - จาก gallery slider\n2. คนหารูปภาพยอย - จาก thumbnails\n3. ตรวจสอบ data attributes - data-large_image, data-src\n4. คนหาจาก links - href ในแกลเลอรี่\n\n5. ใช fallback selectors - หากไมพบรูปภาพ\nการกรองรูปภาพ\nบอทจะขามรูปภาพประเภทนี้:\nSVG placeholders\nรูปภาพ 1x1 pixel\nLazy loading placeholders\nรูปภาพโปรงใส\nรูปภาพที่มีขนาดเล็กกวา 100 bytes\nการดาวนโหลด\nตรวจสอบ Content-Type วาเป็นรูปภาพจริง\nลองดาวนโหลดใหม 2 ครั้งหากลมเหลว\nตั้งเวลา timeout 15 วินาที\nสรางชื่อไฟลจาก SKU และชื่อสินคา\nเก็บไฟลใน products/images/\nโหมดการทํางานแบบเร็ว\nโหมด ขอมูลที่ดึง ใชเมื่อ\nquickSync สตอก + ราคา ตองการอัปเดตขอมูลเร็วๆ\nsyncImagesOnly รูปภาพเทานั้น ตองการรูปภาพใหม\n\nโหมด ขอมูลที่ดึง ใชเมื่อ\nsyncContentOnly รายละเอียด + คําอธิบาย ตองการเนื้อหาใหม\nการทําความสะอาดขอมูล\nบอทจะทําความสะอาดขอมูลขอความโดย:\n// ลบ HTML tags text.replace(/<[^>]*>/g, ' ') // ลบ email\naddresses text.replace(/\\S+@\\S+\\.\\S+/g, '') // ลบ URLs\ntext.replace(/(?:https?|ftp):\\/\\/[\\n\\S]+/g, '') // ลบอักขระพิเศษ\ntext.replace(/[#$%^*_{}~]/g, ' ') // รวม whitespace หลายตัวเป็นตัว\nเดียว text.replace(/\\s+/g, ' ')\nการบันทึกขอมูล\nรูปแบบไฟล\nชื่อไฟล: product_[SKU]_[ชื่อสินคา].json\nตําแหนง: products/ folder\nรูปภาพ: products/images/ folder\nการผสานขอมูล\nหากไฟลเดิมมีอยูแลว:\nMerge Mode: รวมขอมูลใหมเขากับขอมูลเดิม\nPreserve Production: รักษาขอมูล production ไว\nOverwrite Mode: เขียนทับทั้งหมด (ถาเลือก)\n\nระบบติดตามและรายงาน\nขอมูลที่ติดตาม\nจํานวน URL ที่ประมวลผลสําเร็จ\nจํานวน URL ที่ลมเหลว\nจํานวน URL ที่ขาม\nเวลาเฉลี่ยในการประมวลผล\nสถิติรูปภาพ (ดาวนโหลด/ขาม/ลมเหลว)\nประเภทขอผิดพลาดที่เกิดขึ้น\nEvents แจงเตือน\nบอทจะสงสัญญาณแจงเตือนเมื่อ:\nเริ่มตนการทํางาน\nเริ่มประมวลผลแตละ URL\nเริ่มดาวนโหลดรูปภาพ\nดาวนโหลดรูปภาพสําเร็จ\nประมวลผล URL สําเร็จ\nเสร็จสิ้นการทํางานทั้งหมด\nระบบปองกันขอผิดพลาด\nRetry Mechanism\nลองใหมสูงสุด 3 ครั้งหากลมเหลว\nเพิ่มเวลารอระหวางการลองใหม (Exponential Backoff)\n\nตั้ง Timeout เพื่อไมใหรอนาน\nจัดการ Network Errors อัตโนมัติ\nการตรวจสอบ\nvalidateUrl() - ตรวจสอบ URL ใชงานไดหรือไม\nhealthCheck() - ตรวจสอบสถานะระบบ\ntestImageExtraction() - ทดสอบการดึงรูปภาพ\nการใชงานกับ Excel\nบอทสามารถอาน URL จากไฟล Excel ได:\nรองรับไฟล .xlsx และ .xls\nอาน URL จากคอลัมนแรก\nขามแถวหัวตารางอัตโนมัติ\nประมวลผลและสรางรายงาน\nเครื่องมือชวยเหลือ\nเครื่องมือ หนาที่\ncleanupOldImages ลบรูปภาพเกาที่เกินกําหนด\nbackupImages สํารองรูปภาพ\ngetImageStatistics ดูสถิติรูปภาพ\nfindImagesByProductName คนหารูปภาพตามชื่อสินคา\n\nเครื่องมือ หนาที่\ndeleteProductImages ลบรูปภาพของสินคาเฉพาะ\n\n",
+    "vector_ids": [
+      "0590d68e0a15119d679f711979af6283_chunk_0"
+    ],
+    "chunk_count": 1,
+    "embedding_model": "text-embedding-3-large",
+    "embedding_dimension": 3072,
+    "is_single_chunk": true,
+    "original_text_length": 3711,
+    "processing_type": "single_chunk"
   }
 }

@@ -1,4 +1,3 @@
-// src/pages/VectorDBPage.tsx
 import React, { useEffect, useState } from 'react';
 import {
   SaveIcon,
@@ -11,6 +10,7 @@ import Plotly from 'plotly.js-dist-min';
 import '../styles/theme.css';
 import openaiIcon from '../media/llmprovider/openai.png';
 import lancedbIcon from '../media/vectordbs/lancedb.png';
+import { vectorDbApi, productSearchConfigApi } from '../services/api';
 
 const PlotComponent = Plot(Plotly);
 
@@ -209,13 +209,11 @@ const VectorDBPage: React.FC = () => {
 
   const loadVisualizationData = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/vector-db/visualization');
-      const data = await response.json();
-
-      if (data.success) {
+      const response = await vectorDbApi.getVisualizationData();
+      if (response.success && response.data) {
         setVectorData({
-          productVectors: data.productVectors || [],
-          knowledgeVectors: data.knowledgeVectors || []
+          productVectors: response.data.productVectors || [],
+          knowledgeVectors: response.data.knowledgeVectors || []
         });
       }
     } catch (err: any) {
@@ -231,15 +229,13 @@ const VectorDBPage: React.FC = () => {
 
   const loadConfig = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/vector-db/config');
-      const data = await response.json();
-
-      if (data.success && data.config) {
-        setConfig(data.config);
-        setTestProductMaxResults(data.config.productMaxResults || 5);
-        setTestProductSimilarity(data.config.productSimilarityThreshold || 0.7);
-        setTestKnowledgeMaxResults(data.config.knowledgeMaxResults || 5);
-        setTestKnowledgeSimilarity(data.config.knowledgeSimilarityThreshold || 0.7);
+      const response = await vectorDbApi.getConfig();
+      if (response.success && response.data) {
+        setConfig(response.data.config);
+        setTestProductMaxResults(response.data.config.productMaxResults || 5);
+        setTestProductSimilarity(response.data.config.productSimilarityThreshold || 0.7);
+        setTestKnowledgeMaxResults(response.data.config.knowledgeMaxResults || 5);
+        setTestKnowledgeSimilarity(response.data.config.knowledgeSimilarityThreshold || 0.7);
       }
     } catch (err: any) {
       console.error('Error loading config:', err);
@@ -249,11 +245,9 @@ const VectorDBPage: React.FC = () => {
 
   const loadStats = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/vector-db/stats');
-      const data = await response.json();
-
-      if (data.success && data.stats) {
-        setStats(data.stats);
+      const response = await vectorDbApi.getStats();
+      if (response.success && response.data) {
+        setStats(response.data.stats);
       }
     } catch (err: any) {
       console.error('Error loading stats:', err);
@@ -262,11 +256,9 @@ const VectorDBPage: React.FC = () => {
 
   const loadKnowledgeEntries = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/vector-db/knowledge');
-      const data = await response.json();
-
-      if (data.success && data.entries) {
-        setKnowledgeEntries(data.entries);
+      const response = await vectorDbApi.getKnowledgeEntries();
+      if (response.success && response.data) {
+        setKnowledgeEntries(response.data.entries);
       }
     } catch (err: any) {
       console.error('Error loading knowledge entries:', err);
@@ -275,11 +267,9 @@ const VectorDBPage: React.FC = () => {
 
   const loadProductSearchConfig = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/product-search-config');
-      const data = await response.json();
-
-      if (data.success && data.config) {
-        setProductSearchConfig(data.config);
+      const response = await productSearchConfigApi.getConfig();
+      if (response.success && response.data) {
+        setProductSearchConfig(response.data.config);
       }
     } catch (err: any) {
       console.error('Error loading product search config:', err);
@@ -292,21 +282,13 @@ const VectorDBPage: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      const response = await fetch('http://localhost:3001/api/vector-db/config', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(config)
-      });
+      const response = await vectorDbApi.saveConfig(config);
 
-      const data = await response.json();
-
-      if (data.success) {
+      if (response.success) {
         setSuccess('บันทึกการตั้งค่าเรียบร้อยแล้ว');
         setTimeout(() => setSuccess(null), 3000);
       } else {
-        throw new Error(data.error || 'ไม่สามารถบันทึกการตั้งค่าได้');
+        throw new Error(response.error || 'ไม่สามารถบันทึกการตั้งค่าได้');
       }
     } catch (err: any) {
       setError(err.message);
@@ -325,21 +307,11 @@ const VectorDBPage: React.FC = () => {
         enabled: true
       };
 
-      const url = editingKnowledge
-        ? `http://localhost:3001/api/vector-db/knowledge/${editingKnowledge.id}`
-        : 'http://localhost:3001/api/vector-db/knowledge';
+      const response = editingKnowledge
+        ? await vectorDbApi.updateKnowledgeEntry(editingKnowledge.id, payload)
+        : await vectorDbApi.createKnowledgeEntry(payload);
 
-      const response = await fetch(url, {
-        method: editingKnowledge ? 'PUT' : 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
+      if (response.success) {
         setSuccess(editingKnowledge ? 'อัปเดตข้อมูลเรียบร้อย' : 'เพิ่มข้อมูลเรียบร้อย');
         setTimeout(() => setSuccess(null), 3000);
         setShowKnowledgeForm(false);
@@ -347,7 +319,7 @@ const VectorDBPage: React.FC = () => {
         setKnowledgeForm({ title: '', content: '', category: '', tags: '' });
         loadKnowledgeEntries();
       } else {
-        throw new Error(data.error || 'ไม่สามารถบันทึกข้อมูลได้');
+        throw new Error(response.error || 'ไม่สามารถบันทึกข้อมูลได้');
       }
     } catch (err: any) {
       setError(err.message);
@@ -362,18 +334,14 @@ const VectorDBPage: React.FC = () => {
     }
 
     try {
-      const response = await fetch(`http://localhost:3001/api/vector-db/knowledge/${id}`, {
-        method: 'DELETE'
-      });
+      const response = await vectorDbApi.deleteKnowledgeEntry(id);
 
-      const data = await response.json();
-
-      if (data.success) {
+      if (response.success) {
         setSuccess('ลบข้อมูลเรียบร้อยแล้ว');
         setTimeout(() => setSuccess(null), 3000);
         loadKnowledgeEntries();
       } else {
-        throw new Error(data.error || 'ไม่สามารถลบข้อมูลได้');
+        throw new Error(response.error || 'ไม่สามารถลบข้อมูลได้');
       }
     } catch (err: any) {
       setError(err.message);
@@ -385,21 +353,13 @@ const VectorDBPage: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      const response = await fetch('http://localhost:3001/api/product-search-config', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(productSearchConfig)
-      });
+      const response = await productSearchConfigApi.saveConfig(productSearchConfig);
 
-      const data = await response.json();
-
-      if (data.success) {
+      if (response.success) {
         setSuccess('บันทึกการตั้งค่า Product Search เรียบร้อยแล้ว');
         setTimeout(() => setSuccess(null), 3000);
       } else {
-        throw new Error(data.error || 'ไม่สามารถบันทึกการตั้งค่าได้');
+        throw new Error(response.error || 'ไม่สามารถบันทึกการตั้งค่าได้');
       }
     } catch (err: any) {
       setError(err.message);
@@ -417,18 +377,14 @@ const VectorDBPage: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      const response = await fetch('http://localhost:3001/api/product-search-config/reset', {
-        method: 'POST'
-      });
+      const response = await productSearchConfigApi.resetConfig();
 
-      const data = await response.json();
-
-      if (data.success) {
-        setProductSearchConfig(data.config);
+      if (response.success && response.data) {
+        setProductSearchConfig(response.data.config);
         setSuccess('รีเซ็ตการตั้งค่าเป็นค่าเริ่มต้นเรียบร้อยแล้ว');
         setTimeout(() => setSuccess(null), 3000);
       } else {
-        throw new Error(data.error || 'ไม่สามารถรีเซ็ตการตั้งค่าได้');
+        throw new Error(response.error || 'ไม่สามารถรีเซ็ตการตั้งค่าได้');
       }
     } catch (err: any) {
       setError(err.message);
@@ -448,30 +404,22 @@ const VectorDBPage: React.FC = () => {
       setError(null);
       setSearchResults({});
 
-      const response = await fetch('http://localhost:3001/api/vector-db/test-search', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          query: searchQuery,
-          searchType: searchType,
-          productMaxResults: testProductMaxResults,
-          productSimilarityThreshold: testProductSimilarity,
-          knowledgeMaxResults: testKnowledgeMaxResults,
-          knowledgeSimilarityThreshold: testKnowledgeSimilarity
-        })
+      const response = await vectorDbApi.testSearch({
+        query: searchQuery,
+        searchType: searchType,
+        productMaxResults: testProductMaxResults,
+        productSimilarityThreshold: testProductSimilarity,
+        knowledgeMaxResults: testKnowledgeMaxResults,
+        knowledgeSimilarityThreshold: testKnowledgeSimilarity
       });
 
-      const data = await response.json();
-
-      if (data.success) {
+      if (response.success && response.data) {
         setSearchResults({
-          productResults: data.productResults,
-          knowledgeResults: data.knowledgeResults
+          productResults: response.data.productResults,
+          knowledgeResults: response.data.knowledgeResults
         });
       } else {
-        throw new Error(data.error || 'ไม่สามารถค้นหาได้');
+        throw new Error(response.error || 'ไม่สามารถค้นหาได้');
       }
     } catch (err: any) {
       setError(err.message);
@@ -489,21 +437,14 @@ const VectorDBPage: React.FC = () => {
       setSyncing(true);
       setError(null);
 
-      const response = await fetch('http://localhost:3001/api/vector-db/sync', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
+      const response = await vectorDbApi.syncVectors();
 
-      const data = await response.json();
-
-      if (data.success) {
-        setSuccess(`ซิงค์ข้อมูลเรียบร้อยแล้ว: ${data.syncedCount} รายการ`);
+      if (response.success && response.data) {
+        setSuccess(`ซิงค์ข้อมูลเรียบร้อยแล้ว: ${response.data.syncedCount} รายการ`);
         setTimeout(() => setSuccess(null), 5000);
         await loadStats();
       } else {
-        throw new Error(data.error || 'ไม่สามารถซิงค์ข้อมูลได้');
+        throw new Error(response.error || 'ไม่สามารถซิงค์ข้อมูลได้');
       }
     } catch (err: any) {
       setError(err.message);

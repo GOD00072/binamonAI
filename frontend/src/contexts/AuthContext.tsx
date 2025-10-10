@@ -94,13 +94,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const login = async (username: string, password: string) => {
         setIsLoading(true);
         try {
-            const data = await authApi.login(username, password);
-            if (data.token) {
-                localStorage.setItem('auth_token', data.token);
+            const response = await authApi.login(username, password);
+            if (response.success && response.data.token) {
+                localStorage.setItem('auth_token', response.data.token);
                 await fetchProfile();
                 await fetchSystemHealth();
             } else {
-                throw new Error('Login failed: No token received');
+                throw new Error(response.message || 'Login failed: No token received');
             }
         } catch (error: any) {
             console.error('Login error:', error);

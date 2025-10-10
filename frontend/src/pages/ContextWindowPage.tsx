@@ -1,392 +1,251 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
+import { apiCall } from '../services/apiCore';
+import { Card, Button, Modal, Form, Table, Alert, Spinner, Badge } from 'react-bootstrap';
 
-interface ContextWindowConfig {
+interface ContextWindow {
   id: string;
-  key: string;
+  name: string;
   system_prompt: string;
-  use_product_rag: boolean;
-  use_knowledge_rag: boolean;
-  max_context_messages: number;
-  include_user_history: boolean;
-  temperature: number;
   model_name: string;
+  temperature: number;
   max_tokens: number;
-  created_at: string;
-  last_updated: string;
+  image_model_name?: string;
+  image_prompt?: string;
+  text_api_key?: string;
+  image_api_key?: string;
 }
 
-interface ModelInfo {
+interface GeminiModel {
   name: string;
   displayName: string;
-  description: string;
-  version: string;
-  inputTokenLimit: number;
-  outputTokenLimit: number;
-  supportedMethods: string[];
-  apiVersion: string;
-  useDirectUrl: boolean;
-  category: string;
-  recommended: boolean;
 }
 
 const ContextWindowPage: React.FC = () => {
-  const [config, setConfig] = useState<ContextWindowConfig | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [configs, setConfigs] = useState<ContextWindow[]>([]);
+  const [geminiModels, setGeminiModels] = useState<GeminiModel[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-  const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
-
-  // Form state
-  const [systemPrompt, setSystemPrompt] = useState('');
-  const [useProductRAG, setUseProductRAG] = useState(true);
-  const [useKnowledgeRAG, setUseKnowledgeRAG] = useState(true);
-  const [maxContextMessages, setMaxContextMessages] = useState(10);
-  const [includeUserHistory, setIncludeUserHistory] = useState(true);
-  const [temperature, setTemperature] = useState(0.7);
-  const [modelName, setModelName] = useState('');
-  const [maxTokens, setMaxTokens] = useState(2000);
-
-  const updateFormFields = useCallback((cfg: ContextWindowConfig) => {
-    setSystemPrompt(cfg.system_prompt);
-    setUseProductRAG(cfg.use_product_rag);
-    setUseKnowledgeRAG(cfg.use_knowledge_rag);
-    setMaxContextMessages(cfg.max_context_messages);
-    setIncludeUserHistory(cfg.include_user_history);
-    setTemperature(cfg.temperature);
-    setModelName(cfg.model_name);
-    setMaxTokens(cfg.max_tokens);
-  }, []);
-
-  const fetchAvailableModels = useCallback(async () => {
-    try {
-      const response = await fetch('http://localhost:3001/api/config/ai/models', {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` }
-      });
-      const data = await response.json();
-
-      if (data.success && data.models) {
-        setAvailableModels(data.models);
-      }
-    } catch (err) {
-      console.error('Error fetching models:', err);
-    }
-  }, []);
-
-  const fetchConfig = useCallback(async () => {
-    try {
-      setLoading(true);
-      const response = await fetch('http://localhost:3001/api/context-window');
-      const data = await response.json();
-
-      if (data.success) {
-        setConfig(data.config);
-        updateFormFields(data.config);
-      } else {
-        setError('ไม่สามารถโหลดการตั้งค่าได้');
-      }
-    } catch (err) {
-      setError('เกิดข้อผิดพลาดในการโหลดข้อมูล');
-    } finally {
-      setLoading(false);
-    }
-  }, [updateFormFields]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingConfig, setEditingConfig] = useState<ContextWindow | null>(null);
+  const [formData, setFormData] = useState<Partial<ContextWindow>>({
+    name: '',
+    system_prompt: '',
+    model_name: 'gpt-4',
+    temperature: 0.7,
+    max_tokens: 2000,
+    image_model_name: 'gemini-pro-vision',
+    image_prompt: '',
+    text_api_key: '',
+    image_api_key: ''
+  });
 
   useEffect(() => {
-    fetchConfig();
-    fetchAvailableModels();
-  }, [fetchConfig, fetchAvailableModels]);
+    fetchData();
+  }, []);
 
-  const handleSave = async () => {
+  const fetchData = async () => {
     try {
-      setLoading(true);
-      setError(null);
-      setSuccess(null);
+      setIsLoading(true);
+      const configsRes = await apiCall('/api/context-window');
 
-      const response = await fetch('http://localhost:3001/api/context-window', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          system_prompt: systemPrompt,
-          use_product_rag: useProductRAG,
-          use_knowledge_rag: useKnowledgeRAG,
-          max_context_messages: maxContextMessages,
-          include_user_history: includeUserHistory,
-          temperature: temperature,
-          model_name: modelName,
-          max_tokens: maxTokens,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        setConfig(data.config);
-        setSuccess(data.message || 'บันทึกการตั้งค่าสำเร็จ');
+      if (configsRes.success && configsRes.data) {
+        setConfigs(configsRes.data.data);
       } else {
-        setError(data.error || 'ไม่สามารถบันทึกได้');
+        throw new Error(configsRes.error || 'Failed to fetch AI Personalities');
       }
-    } catch (err) {
-      setError('เกิดข้อผิดพลาดในการบันทึก');
+
+    } catch (err: any) {
+      setError('Failed to fetch page data.');
+      console.error(err);
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
-  const handleReset = async () => {
-    if (!window.confirm('คุณต้องการรีเซ็ตการตั้งค่าเป็นค่าเริ่มต้นหรือไม่?')) return;
-
+  const fetchModels = async (apiKey: string) => {
+    if (!apiKey) {
+      setError('Please enter an API key to load models.');
+      return;
+    }
     try {
-      setLoading(true);
-      setError(null);
-      setSuccess(null);
-
-      const response = await fetch('http://localhost:3001/api/context-window/reset', {
+      const modelsRes = await apiCall('/api/gemini/models/fetch', {
         method: 'POST',
+        body: JSON.stringify({ apiKey }),
       });
 
-      const data = await response.json();
-
-      if (data.success) {
-        setConfig(data.config);
-        updateFormFields(data.config);
-        setSuccess(data.message || 'รีเซ็ตการตั้งค่าสำเร็จ');
+      if (modelsRes.success && modelsRes.data && modelsRes.data.models) {
+        setGeminiModels(modelsRes.data.models.all || []);
+        setError(null);
       } else {
-        setError(data.error || 'ไม่สามารถรีเซ็ตได้');
+        throw new Error(modelsRes.error || 'Failed to fetch Gemini models with the provided key.');
       }
-    } catch (err) {
-      setError('เกิดข้อผิดพลาดในการรีเซ็ต');
-    } finally {
-      setLoading(false);
+    } catch (err: any) {
+      setError(err.message);
+      setGeminiModels([]); // Clear models on error
+    }
+  };
+
+  const handleOpenModal = (config: ContextWindow | null = null) => {
+    setEditingConfig(config);
+    if (config) {
+      setFormData(config);
+    } else {
+      setFormData({ name: '', system_prompt: '', model_name: 'gpt-4', temperature: 0.7, max_tokens: 2000, image_model_name: 'gemini-pro-vision', image_prompt: '' });
+    }
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setEditingConfig(null);
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    const isNumber = ['temperature', 'max_tokens'].includes(name);
+    setFormData(prev => ({ ...prev, [name]: isNumber ? Number(value) : value }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      if (editingConfig) {
+        await apiCall(`/api/context-window/${editingConfig.id}`, { method: 'PUT', body: JSON.stringify(formData) });
+      } else {
+        await apiCall('/api/context-window', { method: 'POST', body: JSON.stringify(formData) });
+      }
+      fetchData();
+      handleCloseModal();
+    } catch (err: any) {
+      setError(err.message || 'Failed to save configuration.');
+    }
+  };
+
+  const handleDelete = async (configId: string) => {
+    if (window.confirm('Are you sure you want to delete this AI Personality?')) {
+      try {
+        await apiCall(`/api/context-window/${configId}`, { method: 'DELETE' });
+        fetchData();
+      } catch (err: any) {
+        setError(err.message || 'Failed to delete configuration.');
+      }
     }
   };
 
   return (
-    <div className="container-fluid mt-4">
-      <div className="row">
-        <div className="col-12">
-          <div className="d-flex justify-content-between align-items-center mb-4">
-            <h2>
-              <i className="fas fa-window-restore me-2"></i>
-              Context Window & Prompt Settings
-            </h2>
-            <div>
-              <button className="btn btn-warning me-2" onClick={handleReset} disabled={loading}>
-                <i className="fas fa-undo me-2"></i>
-                รีเซ็ตค่าเริ่มต้น
-              </button>
-              <button className="btn btn-primary" onClick={handleSave} disabled={loading}>
-                <i className="fas fa-save me-2"></i>
-                บันทึก
-              </button>
-            </div>
-          </div>
-
-          {error && (
-            <div className="alert alert-danger alert-dismissible fade show" role="alert">
-              {error}
-              <button type="button" className="btn-close" onClick={() => setError(null)}></button>
-            </div>
+    <div className="container-fluid py-4">
+      <h2 className="text-primary mb-4"><i className="fas fa-brain me-2" />AI Personalities (Context Windows)</h2>
+      {error && <Alert variant="danger">{error}</Alert>}
+      <Card className="shadow-sm">
+        <Card.Header as="h5" className="d-flex justify-content-between align-items-center">
+          Manage AI Personalities
+          <Button variant="primary" onClick={() => handleOpenModal()}>
+            <i className="fas fa-plus me-2" /> Create New Personality
+          </Button>
+        </Card.Header>
+        <Card.Body>
+          {isLoading ? (
+            <div className="text-center"><Spinner animation="border" /></div>
+          ) : (
+            <Table responsive hover>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>System Prompt</th>
+                  <th>Text Model</th>
+                  <th>Image Model</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {configs.length > 0 ? (
+                  configs.map(config => (
+                    <tr key={config.id}>
+                      <td>{config.name}</td>
+                      <td style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxWidth: '400px' }}>{config.system_prompt}</td>
+                      <td><Badge bg="info">{config.model_name}</Badge></td>
+                      <td><Badge bg="secondary">{config.image_model_name}</Badge></td>
+                      <td>
+                        <Button variant="outline-primary" size="sm" className="me-2" onClick={() => handleOpenModal(config)}><i className="fas fa-edit" /></Button>
+                        <Button variant="outline-danger" size="sm" onClick={() => handleDelete(config.id)}><i className="fas fa-trash" /></Button>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={5} className="text-center text-muted">No AI Personalities found.</td>
+                  </tr>
+                )}
+              </tbody>
+            </Table>
           )}
+        </Card.Body>
+      </Card>
 
-          {success && (
-            <div className="alert alert-success alert-dismissible fade show" role="alert">
-              {success}
-              <button type="button" className="btn-close" onClick={() => setSuccess(null)}></button>
-            </div>
-          )}
-
-          <div className="row">
-            {/* System Prompt Section */}
-            <div className="col-12 mb-4">
-              <div className="card">
-                <div className="card-header bg-primary text-white">
-                  <h5 className="mb-0">
-                    <i className="fas fa-robot me-2"></i>
-                    System Prompt
-                  </h5>
-                </div>
-                <div className="card-body">
-                  <div className="mb-3">
-                    <label className="form-label">Prompt เริ่มต้นของระบบ</label>
-                    <textarea
-                      className="form-control"
-                      rows={6}
-                      value={systemPrompt}
-                      onChange={(e) => setSystemPrompt(e.target.value)}
-                      placeholder="พิมพ์ system prompt ที่ต้องการ..."
-                    />
-                    <small className="text-muted">
-                      กำหนดบทบาทและวิธีการตอบของ AI ผู้ช่วย
-                    </small>
-                  </div>
-                </div>
+      <Modal show={isModalOpen} onHide={handleCloseModal} size="lg">
+        <Modal.Header closeButton>
+          <Modal.Title>{editingConfig ? 'Edit' : 'Create'} AI Personality</Modal.Title>
+        </Modal.Header>
+        <Form onSubmit={handleSubmit}>
+          <Modal.Body>
+            <Form.Group className="mb-3">
+              <Form.Label>Personality Name</Form.Label>
+              <Form.Control type="text" name="name" value={formData.name} onChange={handleInputChange} required />
+            </Form.Group>
+            <hr />
+            <h5 className="mt-4">Text Generation</h5>
+            <Form.Group className="mb-3">
+              <Form.Label>System Prompt</Form.Label>
+              <Form.Control as="textarea" rows={5} name="system_prompt" value={formData.system_prompt} onChange={handleInputChange} required />
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label>Text Model Name</Form.Label>
+              <Form.Select name="model_name" value={formData.model_name} onChange={handleInputChange} required>
+                {geminiModels.map(model => (
+                  <option key={model.name} value={model.name}>{model.displayName}</option>
+                ))}
+              </Form.Select>
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label>Text Model API Key (Optional)</Form.Label>
+              <div className="input-group">
+                <Form.Control type="password" name="text_api_key" value={formData.text_api_key || ''} onChange={handleInputChange} placeholder="Leave blank to use default system key" />
+                <Button variant="outline-secondary" onClick={() => fetchModels(formData.text_api_key || '')}>Load Models</Button>
               </div>
-            </div>
-
-            {/* RAG Settings */}
-            <div className="col-md-6 mb-4">
-              <div className="card h-100">
-                <div className="card-header bg-info text-white">
-                  <h5 className="mb-0">
-                    <i className="fas fa-database me-2"></i>
-                    RAG Settings
-                  </h5>
-                </div>
-                <div className="card-body">
-                  <div className="form-check form-switch mb-3">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      id="useProductRAG"
-                      checked={useProductRAG}
-                      onChange={(e) => setUseProductRAG(e.target.checked)}
-                    />
-                    <label className="form-check-label" htmlFor="useProductRAG">
-                      <i className="fas fa-box me-2"></i>
-                      ใช้ Product RAG
-                    </label>
-                  </div>
-
-                  <div className="form-check form-switch mb-3">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      id="useKnowledgeRAG"
-                      checked={useKnowledgeRAG}
-                      onChange={(e) => setUseKnowledgeRAG(e.target.checked)}
-                    />
-                    <label className="form-check-label" htmlFor="useKnowledgeRAG">
-                      <i className="fas fa-brain me-2"></i>
-                      ใช้ Knowledge RAG
-                    </label>
-                  </div>
-
-                  <div className="mb-3">
-                    <label className="form-label">
-                      จำนวนข้อความย้อนหลัง (Context Messages)
-                    </label>
-                    <input
-                      type="number"
-                      className="form-control"
-                      value={maxContextMessages}
-                      onChange={(e) => setMaxContextMessages(parseInt(e.target.value))}
-                      min="1"
-                      max="50"
-                    />
-                  </div>
-
-                  <div className="form-check form-switch">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      id="includeUserHistory"
-                      checked={includeUserHistory}
-                      onChange={(e) => setIncludeUserHistory(e.target.checked)}
-                    />
-                    <label className="form-check-label" htmlFor="includeUserHistory">
-                      <i className="fas fa-history me-2"></i>
-                      รวมประวัติผู้ใช้
-                    </label>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Model Settings */}
-            <div className="col-md-6 mb-4">
-              <div className="card h-100">
-                <div className="card-header bg-success text-white">
-                  <h5 className="mb-0">
-                    <i className="fas fa-cog me-2"></i>
-                    Model Settings
-                  </h5>
-                </div>
-                <div className="card-body">
-                  <div className="mb-3">
-                    <label className="form-label">Model Name</label>
-                    <select
-                      className="form-select"
-                      value={modelName}
-                      onChange={(e) => setModelName(e.target.value)}
-                    >
-                      {availableModels.length === 0 ? (
-                        <option value="">กำลังโหลดรายการโมเดล...</option>
-                      ) : (
-                        availableModels.map((model) => (
-                          <option key={model.name} value={model.name}>
-                            {model.displayName} {model.recommended && '⭐'}
-                          </option>
-                        ))
-                      )}
-                    </select>
-                    <small className="text-muted">
-                      เลือกโมเดล AI จากรายการที่โหลดจาก Google AI
-                    </small>
-                  </div>
-
-                  <div className="mb-3">
-                    <label className="form-label">
-                      Temperature: {temperature}
-                    </label>
-                    <input
-                      type="range"
-                      className="form-range"
-                      min="0"
-                      max="2"
-                      step="0.1"
-                      value={temperature}
-                      onChange={(e) => setTemperature(parseFloat(e.target.value))}
-                    />
-                    <small className="text-muted">
-                      ควบคุมความสร้างสรรค์ของคำตอบ (0 = เข้มงวด, 2 = สร้างสรรค์)
-                    </small>
-                  </div>
-
-                  <div className="mb-3">
-                    <label className="form-label">Max Tokens (maxOutputTokens)</label>
-                    <input
-                      type="number"
-                      className="form-control"
-                      value={maxTokens}
-                      onChange={(e) => setMaxTokens(parseInt(e.target.value))}
-                      min="100"
-                      max="35000"
-                      step="100"
-                    />
-                    <small className="text-muted">
-                      จำนวน tokens สูงสุดในการตอบ (อ้างอิงจาก generationConfig.maxOutputTokens)
-                    </small>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Current Config Info */}
-          {config && (
-            <div className="card">
-              <div className="card-header">
-                <h5 className="mb-0">
-                  <i className="fas fa-info-circle me-2"></i>
-                  ข้อมูลการตั้งค่าปัจจุบัน
-                </h5>
-              </div>
-              <div className="card-body">
-                <div className="row">
-                  <div className="col-md-6">
-                    <p><strong>สร้างเมื่อ:</strong> {new Date(config.created_at).toLocaleString('th-TH')}</p>
-                  </div>
-                  <div className="col-md-6">
-                    <p><strong>แก้ไขล่าสุด:</strong> {new Date(config.last_updated).toLocaleString('th-TH')}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label>Temperature</Form.Label>
+              <Form.Control type="number" step="0.1" name="temperature" value={formData.temperature} onChange={handleInputChange} required />
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label>Max Tokens</Form.Label>
+              <Form.Control type="number" step="1" name="max_tokens" value={formData.max_tokens} onChange={handleInputChange} required />
+            </Form.Group>
+            <hr />
+            <h5 className="mt-4">Image Analysis</h5>
+            <Form.Group className="mb-3">
+              <Form.Label>Image Analysis Model</Form.Label>
+              <Form.Select name="image_model_name" value={formData.image_model_name} onChange={handleInputChange}>
+                {geminiModels.map(model => (
+                  <option key={model.name} value={model.name}>{model.displayName}</option>
+                ))}
+              </Form.Select>
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label>Image Model API Key (Optional)</Form.Label>
+              <Form.Control type="password" name="image_api_key" value={formData.image_api_key || ''} onChange={handleInputChange} placeholder="Leave blank to use default system key" />
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label>Image Analysis Prompt</Form.Label>
+              <Form.Control as="textarea" rows={3} name="image_prompt" value={formData.image_prompt || ''} onChange={handleInputChange} />
+            </Form.Group>
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="secondary" onClick={handleCloseModal}>Cancel</Button>
+            <Button variant="primary" type="submit">Save</Button>
+          </Modal.Footer>
+        </Form>
+      </Modal>
     </div>
   );
 };

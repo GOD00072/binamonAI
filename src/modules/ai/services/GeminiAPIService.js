@@ -7,13 +7,13 @@ class GeminiAPIService {
         this.logger = logger;
     }
 
-    async callGeminiAPI(prompt, history = [], generationConfig, apiKey) {
+    async callGeminiAPI(prompt, history = [], generationConfig, apiKey, modelName = 'gemini-2.5-pro') {
         try {
             if (!apiKey) {
                 throw new Error('GEMINI_API_KEY not provided to GeminiAPIService');
             }
 
-            const apiEndpoint = 'https://generativelanguage.googleapis.com/v1/models/gemini-2.5-pro:generateContent';
+            const apiEndpoint = `https://generativelanguage.googleapis.com/v1/models/${modelName}:generateContent`;
             
             const payload = {
                 contents: [],

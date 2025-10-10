@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Card, Button, Modal, Form, Table, Badge, Alert, Row, Col, InputGroup, Spinner, Image } from 'react-bootstrap';
-// Using Font Awesome classes instead of react-icons
-import axios from 'axios';
+import { keywordImagesApi } from '../services/api';
 
 interface KeywordMapping {
   keyword: string;
@@ -15,14 +14,6 @@ interface KeywordMapping {
   introMessage?: string;
   createdAt: string;
   lastUpdated: string;
-}
-
-interface ApiResponse<T> {
-  success: boolean;
-  data?: T;
-  keywords?: T[];
-  error?: string;
-  message?: string;
 }
 
 const KeywordManagementPage: React.FC = () => {
@@ -47,8 +38,6 @@ const KeywordManagementPage: React.FC = () => {
     introMessage: ''
   });
 
-  const API_BASE = 'http://localhost:3001/api';
-
   useEffect(() => {
     loadKeywords();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -57,21 +46,21 @@ const KeywordManagementPage: React.FC = () => {
   const loadKeywords = async () => {
     try {
       setLoading(true);
-      const response = await axios.get<ApiResponse<KeywordMapping>>(`${API_BASE}/keyword-images/keywords`);
+      const response = await keywordImagesApi.getKeywords();
 
-      if (response.data.success && response.data.keywords) {
+      if (response.success && response.data) {
         // Convert legacy format to new format
-        const convertedKeywords = response.data.keywords.map(keyword => ({
+        const convertedKeywords = response.data.keywords.map((keyword: any) => ({
           ...keyword,
           imageUrls: keyword.imageUrls || (keyword.imageUrl ? [keyword.imageUrl] : [])
         }));
         setKeywords(convertedKeywords);
       } else {
-        throw new Error(response.data.error || 'Failed to load keywords');
+        throw new Error(response.error || 'Failed to load keywords');
       }
     } catch (err: any) {
       console.error('Error loading keywords:', err);
-      setError(err.response?.data?.error || err.message || 'Failed to load keywords');
+      setError(err.message || 'Failed to load keywords');
     } finally {
       setLoading(false);
     }
@@ -105,28 +94,22 @@ const KeywordManagementPage: React.FC = () => {
       let response;
       if (editingKeyword) {
         // Update existing keyword
-        response = await axios.put<ApiResponse<KeywordMapping>>(
-          `${API_BASE}/keyword-images/keywords/${encodeURIComponent(editingKeyword.keyword)}`,
-          requestData
-        );
+        response = await keywordImagesApi.updateKeyword(editingKeyword.keyword, requestData);
       } else {
         // Create new keyword
-        response = await axios.post<ApiResponse<KeywordMapping>>(
-          `${API_BASE}/keyword-images/keywords`,
-          requestData
-        );
+        response = await keywordImagesApi.createKeyword(requestData);
       }
 
-      if (response.data.success) {
+      if (response.success) {
         await loadKeywords();
         handleCloseModal();
         setError(null);
       } else {
-        throw new Error(response.data.error || 'Operation failed');
+        throw new Error(response.error || 'Operation failed');
       }
     } catch (err: any) {
       console.error('Error saving keyword:', err);
-      setError(err.response?.data?.error || err.message || 'Failed to save keyword');
+      setError(err.message || 'Failed to save keyword');
     }
   };
 
@@ -136,19 +119,17 @@ const KeywordManagementPage: React.FC = () => {
     }
 
     try {
-      const response = await axios.delete<ApiResponse<any>>(
-        `${API_BASE}/keyword-images/keywords/${encodeURIComponent(keyword)}`
-      );
+      const response = await keywordImagesApi.deleteKeyword(keyword);
 
-      if (response.data.success) {
+      if (response.success) {
         await loadKeywords();
         setError(null);
       } else {
-        throw new Error(response.data.error || 'Failed to delete keyword');
+        throw new Error(response.error || 'Failed to delete keyword');
       }
     } catch (err: any) {
       console.error('Error deleting keyword:', err);
-      setError(err.response?.data?.error || err.message || 'Failed to delete keyword');
+      setError(err.message || 'Failed to delete keyword');
     }
   };
 

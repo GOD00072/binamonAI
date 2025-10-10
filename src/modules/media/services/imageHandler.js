@@ -382,7 +382,7 @@ class ImageHandler {
         }
     }
 
-    async processLineImage(messageId, contentProvider, userId, replyToken, userComment = null) {
+    async processLineImage(messageId, contentProvider, userId, replyToken, userComment = null, channelAccessToken, contextWindow = null) {
         try {
             this.logger.info('Processing LINE image:', {
                 messageId,
@@ -393,7 +393,7 @@ class ImageHandler {
             });
     
             // Download image from LINE
-            const imageBuffer = await this.downloadLineImage(messageId);
+            const imageBuffer = await this.downloadLineImage(messageId, channelAccessToken);
             if (!imageBuffer) {
                 // Log error but don't reply to user
                 this.logger.error('Failed to download image', { 
@@ -404,7 +404,7 @@ class ImageHandler {
             }
     
             // Send loading animation while processing
-            await this.lineHandler.sendLoadingAnimation(userId);
+            await this.lineHandler.sendLoadingAnimation(userId, 60, channelAccessToken);
             
             // Add image to batch processing
             const imageDetails = {
@@ -412,7 +412,9 @@ class ImageHandler {
                 replyToken,
                 buffer: imageBuffer,
                 timestamp: Date.now(),
-                userComment // Include user comment with the image (ถ้ามี)
+                userComment, // Include user comment with the image (ถ้ามี)
+                channelAccessToken, // Pass the token to the batch
+                contextWindow // Pass the context window to the batch
             };
             
             this.logger.info('Adding image to batch processor', {
@@ -592,9 +594,16 @@ class ImageHandler {
             currentModel: this.currentModel
         });
         
+        // Use the context from the first image in the batch (assuming it's the same for all)
+        const contextWindow = batch.images[0]?.contextWindow;
+
         try {
             // Process each image to get descriptions
-            const analysisPromises = batch.images.map(img => this.analyzeImage(img.buffer));
+            const analysisPromises = batch.images.map(img => this.analyzeImage(
+                img.buffer,
+                contextWindow?.image_model_name,
+                contextWindow?.image_prompt
+            ));
             const imageDescriptions = await Promise.all(analysisPromises);
             
             // Collect all user comments from the batch
@@ -628,15 +637,17 @@ class ImageHandler {
                 desc
             ).join('\n\n');
             
-            // Use the reply token from the first image
+            // Use the reply token and access token from the first image in the batch
             const replyToken = batch.images[0].replyToken;
+            const channelAccessToken = batch.images[0].channelAccessToken;
             const messageId = `img_batch_${Date.now()}_${batch.images.length}`;
             
             await this.lineHandler.processUserMessage(
                 userId, 
                 combinedText, 
                 replyToken, 
-                messageId
+                messageId,
+                channelAccessToken
             );
             
             this.logger.info('Batch processing completed', {
@@ -658,10 +669,10 @@ class ImageHandler {
         }
     }
     
-    async downloadLineImage(messageId) {
+    async downloadLineImage(messageId, channelAccessToken) {
         try {
-            if (!process.env.LINE_CHANNEL_ACCESS_TOKEN) {
-                throw new Error('LINE_CHANNEL_ACCESS_TOKEN not configured');
+            if (!channelAccessToken) {
+                throw new Error('channelAccessToken not provided for downloadLineImage');
             }
 
             const lineContentUrl = `https://api-data.line.me/v2/bot/message/${messageId}/content`;
@@ -670,7 +681,7 @@ class ImageHandler {
                 url: lineContentUrl,
                 responseType: 'arraybuffer',
                 headers: {
-                    'Authorization': `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}`
+                    'Authorization': `Bearer ${channelAccessToken}`
                 }
             });
 
@@ -697,11 +708,17 @@ class ImageHandler {
         }
     }
 
-    async analyzeImage(imageBuffer) {
+    async analyzeImage(imageBuffer, modelName = null, prompt = null) {
         try {
             if (!this.initialized) {
                 await this.initialize();
             }
+
+            const activeModelName = modelName || this.currentModel;
+            const activePrompt = prompt || this.promptTemplate;
+
+            // Get the model instance, potentially a different one for this request
+            const model = this.genAI.getGenerativeModel({ model: activeModelName });
 
             // Optimize the image if needed
             const optimizedBuffer = await this.optimizeImage(imageBuffer);
@@ -709,9 +726,8 @@ class ImageHandler {
             // Convert image to base64 for Gemini
             const base64Image = optimizedBuffer.toString('base64');
             
-            // Use the configurable promptTemplate instead of hardcoded prompt
-            const result = await this.model.generateContent([
-                this.promptTemplate,
+            const result = await model.generateContent([
+                activePrompt,
                 {
                     inlineData: {
                         mimeType: "image/jpeg",
@@ -724,7 +740,7 @@ class ImageHandler {
             
             this.logger.info('Image analysis completed', {
                 descriptionLength: responseText.length,
-                currentModel: this.currentModel
+                modelUsed: activeModelName
             });
             
             return responseText;
@@ -732,7 +748,7 @@ class ImageHandler {
             this.logger.error('Error analyzing image:', {
                 error: error.message,
                 stack: error.stack,
-                currentModel: this.currentModel
+                modelUsed: modelName || this.currentModel
             });
             throw error;
         }

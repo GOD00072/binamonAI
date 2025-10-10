@@ -323,7 +323,7 @@ class KeywordImageSender {
     }
 
     // *** Message Processing ***
-    async processOutgoingMessage(userId, message) {
+    async processOutgoingMessage(userId, message, channelAccessToken) {
         try {
             this.logger.info('🔄 Processing outgoing message for keywords', {
                 userId: userId ? userId.substring(0, 10) + '...' : 'unknown',
@@ -360,7 +360,7 @@ class KeywordImageSender {
             for (const detectedKeyword of detectedKeywords) {
                 try {
                     this.logger.info(`🔄 Processing keyword: ${detectedKeyword.keyword}`);
-                    const result = await this.processKeywordForImage(userId, detectedKeyword);
+                    const result = await this.processKeywordForImage(userId, detectedKeyword, channelAccessToken);
                     results.push(result);
 
                     if (result.sent && detectedKeywords.indexOf(detectedKeyword) < detectedKeywords.length - 1) {
@@ -398,7 +398,7 @@ class KeywordImageSender {
         }
     }
 
-    async processKeywordForImage(userId, detectedKeyword) {
+    async processKeywordForImage(userId, detectedKeyword, channelAccessToken) {
         try {
             const { keyword, config } = detectedKeyword;
 
@@ -413,7 +413,7 @@ class KeywordImageSender {
                 };
             }
 
-            const sendResult = await this.sendKeywordImage(userId, keyword, config);
+            const sendResult = await this.sendKeywordImage(userId, keyword, config, channelAccessToken);
 
             if (sendResult.success) {
                 this.updateUserSendHistory(userId, keyword);
@@ -545,7 +545,7 @@ class KeywordImageSender {
     }
 
     // *** Image Sending Methods ***
-    async sendKeywordImage(userId, keyword, config) {
+    async sendKeywordImage(userId, keyword, config, channelAccessToken) {
         try {
             this.logger.info('Preparing to send keyword images', {
                 userId: userId.substring(0, 10) + '...',
@@ -560,13 +560,13 @@ class KeywordImageSender {
             // ถ้ามีรูปเดียว ส่งแบบปกติ
             if (config.imageUrls.length === 1) {
                 if (config.imageType === 'file') {
-                    sendResult = await this.sendSingleImageFromFile(userId, keyword, config.imageUrls[0]);
+                    sendResult = await this.sendSingleImageFromFile(userId, keyword, config.imageUrls[0], channelAccessToken);
                 } else {
-                    sendResult = await this.sendSingleImageFromUrl(userId, keyword, config.imageUrls[0]);
+                    sendResult = await this.sendSingleImageFromUrl(userId, keyword, config.imageUrls[0], channelAccessToken);
                 }
             } else {
                 // ถ้ามีหลายรูป ส่งแบบอัลบั้ม
-                sendResult = await this.sendMultipleImagesAsAlbum(userId, keyword, config);
+                sendResult = await this.sendMultipleImagesAsAlbum(userId, keyword, config, channelAccessToken);
             }
 
             // Send intro message after image if enabled
@@ -575,7 +575,7 @@ class KeywordImageSender {
                     await new Promise(resolve => setTimeout(resolve, 1000));
 
                     const introMessage = this.generateIntroMessage(keyword, config);
-                    await this.lineHandler.pushMessage(userId, introMessage, null, false);
+                    await this.lineHandler.pushMessage(userId, introMessage, null, false, channelAccessToken);
 
                     this.logger.info('✅ Intro message sent AFTER images', {
                         userId: userId.substring(0, 10) + '...',
@@ -608,29 +608,12 @@ class KeywordImageSender {
         return this.config.introMessageTemplate.replace('{keyword}', keyword);
     }
 
-    async sendSingleImageFromUrl(userId, keyword, imageUrl) {
+    async sendSingleImageFromUrl(userId, keyword, imageUrl, channelAccessToken) {
         try {
-            // Send image directly from URL
-            const response = await axios.post(
-                'https://api.line.me/v2/bot/message/push',
-                {
-                    to: userId,
-                    messages: [{
-                        type: 'image',
-                        originalContentUrl: imageUrl,
-                        previewImageUrl: imageUrl
-                    }]
-                },
-                {
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}`
-                    },
-                    timeout: 30000
-                }
-            );
+            // Send image directly from URL via lineHandler
+            const response = await this.lineHandler.sendImageMessage(userId, imageUrl, imageUrl, channelAccessToken);
 
-            if (response.status === 200) {
+            if (response.success) {
                 this.logger.info('Image sent successfully from URL', {
                     userId: userId.substring(0, 10) + '...',
                     keyword: keyword,
@@ -642,7 +625,7 @@ class KeywordImageSender {
                     method: 'url'
                 };
             } else {
-                throw new Error(`LINE API error: ${response.status} - ${response.statusText}`);
+                throw new Error(`LINE API error: ${response.error}`);
             }
 
         } catch (error) {
@@ -655,7 +638,7 @@ class KeywordImageSender {
     }
 
     // *** ส่งหลายรูปแบบอัลบั้ม (Flex Message Carousel) ***
-    async sendMultipleImagesAsAlbum(userId, keyword, config) {
+    async sendMultipleImagesAsAlbum(userId, keyword, config, channelAccessToken) {
         try {
             this.logger.info('Preparing to send multiple images as album', {
                 userId: userId.substring(0, 10) + '...',
@@ -708,7 +691,7 @@ class KeywordImageSender {
                 {
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}`
+                        'Authorization': `Bearer ${channelAccessToken}`
                     },
                     timeout: 30000
                 }
@@ -740,7 +723,7 @@ class KeywordImageSender {
         }
     }
 
-    async sendSingleImageFromFile(userId, keyword, filePath) {
+    async sendSingleImageFromFile(userId, keyword, filePath, channelAccessToken) {
         try {
             // Check if file exists
 
@@ -763,27 +746,10 @@ class KeywordImageSender {
             // Upload to temp storage
             const imageUrl = await this.uploadToTempStorage(imageBuffer, `${keyword}_${Date.now()}.jpg`);
 
-            // Send image via LINE API
-            const response = await axios.post(
-                'https://api.line.me/v2/bot/message/push',
-                {
-                    to: userId,
-                    messages: [{
-                        type: 'image',
-                        originalContentUrl: imageUrl,
-                        previewImageUrl: imageUrl
-                    }]
-                },
-                {
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}`
-                    },
-                    timeout: 30000
-                }
-            );
+            // Send image via LineHandler
+            const response = await this.lineHandler.sendImageMessage(userId, imageUrl, imageUrl, channelAccessToken);
 
-            if (response.status === 200) {
+            if (response.success) {
                 this.logger.info('Image sent successfully from file', {
                     userId: userId.substring(0, 10) + '...',
                     keyword: keyword,
@@ -797,7 +763,7 @@ class KeywordImageSender {
                     finalSize: imageBuffer.length
                 };
             } else {
-                throw new Error(`LINE API error: ${response.status} - ${response.statusText}`);
+                throw new Error(`LINE API error: ${response.error}`);
             }
 
         } catch (error) {

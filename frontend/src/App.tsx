@@ -20,7 +20,8 @@ import KeywordManagementPage from './pages/KeywordManagementPage';
 import ProductsPage from './pages/ProductsPage';
 import DashboardPage from './pages/DashboardPage';
 import ImageConfigPage from './pages/ImageConfigPage';
-import ModelConfigurationPage from './pages/ModelConfigurationPage';
+
+import LineOaConfigPage from './pages/LineOaConfigPage';
 
 // Services
 import { socketService } from './services/socket';
@@ -396,7 +397,9 @@ const App: React.FC = () => {
                     <Route path="/keywords" element={withLayout(KeywordManagementPage, 'keywords')} />
                     <Route path="/products" element={withLayout(ProductsPage, 'products')} />
                     <Route path="/image-config" element={withLayout(ImageConfigPage, 'image-config')} />
-                    <Route path="/model-config" element={withLayout(ModelConfigurationPage, 'model-config')} />
+
+                    <Route path="/line-oa-config" element={withLayout(LineOaConfigPage, 'line-oa-config')} />
+                    <Route path="/ai-personalities" element={withLayout(ContextWindowPage, 'ai-personalities')} />
 
                         <Route path="*" element={<Navigate to="/" replace />} />
                       </Routes>

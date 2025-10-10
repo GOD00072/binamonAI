@@ -1,4 +1,3 @@
-// src/services/api.ts
 import { apiCall, apiCallFile, apiUtils, ApiResponse } from './apiCore';
 
 // =================================================================
@@ -223,40 +222,36 @@ export interface User {
 }
 
 
-// ======================== API MODULES ========================
-
 /**
  * Authentication related APIs
  */
 export const authApi = {
   login: async (username: string, password: string) => {
-    const response = await apiCall('/api/auth/login', {
+    return await apiCall('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
       headers: { 'Content-Type': 'application/json' }
     });
-    if (!response.success) throw new Error(response.error || 'Login failed');
-    return response.data;
   },
   getProfile: async () => {
-    const response = await apiCall('/api/auth/profile');
-    if (!response.success) throw new Error(response.error || 'Failed to get profile');
-    return response.data;
+    return await apiCall('/api/auth/profile');
   },
   changePassword: async (currentPassword: string, newPassword: string) => {
-    const response = await apiCall('/api/auth/change-password', {
+    return await apiCall('/api/auth/change-password', {
       method: 'POST',
       body: JSON.stringify({ currentPassword, newPassword })
     });
-    if (!response.success) throw new Error(response.error || 'Failed to change password');
-    return response.data;
   },
   logout: async () => apiCall('/api/auth/logout', { method: 'POST' }),
   refreshToken: async () => apiCall('/api/auth/refresh', { method: 'POST' }),
   register: async (userData: any) => apiCall('/api/auth/register', { method: 'POST', body: JSON.stringify(userData) }),
   verifyToken: async (token: string) => apiCall('/api/auth/verify', { method: 'POST', body: JSON.stringify({ token }) }),
   resetPassword: async (email: string) => apiCall('/api/auth/reset-password', { method: 'POST', body: JSON.stringify({ email }) }),
-  updateProfile: async (profileData: any) => apiCall('/api/auth/profile', { method: 'PUT', body: JSON.stringify(profileData) }),
+  updateProfile: async (profileData: any) => {
+    const response = await apiCall('/api/auth/profile', { method: 'PUT', body: JSON.stringify(profileData) });
+    if (!response.success) throw new Error(response.error || 'Failed to update profile');
+    return response.data;
+  },
 };
 
 
@@ -273,8 +268,16 @@ export const aiModelApi = {
   },
   getRealTimeStats: async () => apiCall('/api/ai/models/realtime-stats'),
   clearModelCache: async (modelName: string) => apiCall(`/api/ai/models/${modelName}/clear-cache`, { method: 'POST' }),
-  // Toggle AI features for a given user
   toggleUser: async (userId: string, enabled: boolean) => apiCall(`/api/ai/models/users/${userId}/toggle`, { method: 'POST', body: JSON.stringify({ enabled }) }),
+  refreshModels: async () => apiCall('/api/config/ai/models/refresh', { method: 'POST' }),
+  getConfig: async () => apiCall('/api/ai/config'),
+  updateModelConfig: async (modelConfig: any) => apiCall('/api/ai/model', { method: 'POST', body: JSON.stringify(modelConfig) }),
+  updateGenerationConfig: async (generationConfig: any) => apiCall('/api/ai/config', { method: 'POST', body: JSON.stringify(generationConfig) }),
+  updateAiMainConfig: async (config: any) => apiCall('/api/ai/config', { method: 'POST', body: JSON.stringify(config) }),
+  toggleGlobal: async (enabled: boolean) => apiCall('/api/ai/toggle-global', { method: 'POST', body: JSON.stringify({ enabled }) }),
+  getUsageStats: async (period: 'day' | 'week' | 'month' = 'day') => apiCall(`/api/ai/usage?period=${period}`),
+  getCostAnalysis: async (startDate: string, endDate: string) => apiCall(`/api/ai/costs?start=${startDate}&end=${endDate}`),
+  resetAiConfig: async () => apiCall('/api/ai/reset-config', { method: 'POST' }),
 };
 
 /**
@@ -286,6 +289,16 @@ export const aiTestApi = {
   generateKnowledgeContext: async (params: any) => apiCall('/api/ai/generate-knowledge-context', { method: 'POST', body: JSON.stringify(params) }),
   testUnifiedContext: async (params: any) => apiCall('/api/debug/test-unified-context', { method: 'POST', body: JSON.stringify(params) }),
   testLanguageConfig: async (language?: string) => apiCall(`/api/debug/test-language-config${language ? `?language=${language}`: ''}`),
+  chatTest: async (params: any) => apiCall('/api/ai/chat-test', { method: 'POST', body: JSON.stringify(params) }),
+  testModel: async (params: any) => apiCall('/api/ai/test-model', { method: 'POST', body: JSON.stringify(params) }),
+};
+
+/**
+ * Language APIs
+ */
+export const languageApi = {
+  getLanguageConfig: async (language: string) => apiCall(`/api/config/language/${language}`),
+  saveLanguageConfig: async (language: string, settings: any) => apiCall(`/api/config/language/${language}`, { method: 'POST', body: JSON.stringify(settings) }),
 };
 
 
@@ -479,6 +492,7 @@ export const systemApi = {
   executeMaintenanceTask: async (taskId: string) => apiCall(`/api/system/maintenance/tasks/${taskId}/execute`, { method: 'POST' }),
   getSystemAlerts: async (params: any) => apiCall(`/api/system/alerts?${new URLSearchParams(params)}`),
   acknowledgeAlert: async (alertId: string) => apiCall(`/api/system/alerts/${alertId}/acknowledge`, { method: 'POST' }),
+  getAIStatus: async () => apiCall('/api/ai/status'),
 };
 
 /**
@@ -529,4 +543,88 @@ export const notificationApi = {
     markNotificationAsRead: async (notificationId: string) => apiCall(`/api/notifications/${notificationId}/read`, { method: 'PUT' }),
     sendNotification: async (notificationData: any) => apiCall('/api/notifications/send', { method: 'POST', body: JSON.stringify(notificationData) }),
     getNotificationTemplates: async () => apiCall('/api/notifications/templates'),
+};
+
+/**
+ * Vector DB APIs
+ */
+export const vectorDbApi = {
+  getVisualizationData: async () => apiCall('/api/vector-db/visualization'),
+  getConfig: async () => apiCall('/api/vector-db/config'),
+  saveConfig: async (config: any) => apiCall('/api/vector-db/config', { method: 'POST', body: JSON.stringify(config) }),
+  getStats: async () => apiCall('/api/vector-db/stats'),
+  getKnowledgeEntries: async () => apiCall('/api/vector-db/knowledge'),
+  createKnowledgeEntry: async (entry: any) => apiCall('/api/vector-db/knowledge', { method: 'POST', body: JSON.stringify(entry) }),
+  updateKnowledgeEntry: async (id: string, entry: any) => apiCall(`/api/vector-db/knowledge/${id}`, { method: 'PUT', body: JSON.stringify(entry) }),
+  deleteKnowledgeEntry: async (id: string) => apiCall(`/api/vector-db/knowledge/${id}`, { method: 'DELETE' }),
+  testSearch: async (params: any) => apiCall('/api/vector-db/test-search', { method: 'POST', body: JSON.stringify(params) }),
+  syncVectors: async () => apiCall('/api/vector-db/sync', { method: 'POST' }),
+};
+
+/**
+ * Product Search Config APIs
+ */
+export const productSearchConfigApi = {
+  getConfig: async () => apiCall('/api/product-search-config'),
+  saveConfig: async (config: any) => apiCall('/api/product-search-config', { method: 'POST', body: JSON.stringify(config) }),
+  resetConfig: async () => apiCall('/api/product-search-config/reset', { method: 'POST' }),
+};
+
+/**
+ * Dashboard APIs
+ */
+export const dashboardApi = {
+  getDashboard: async () => apiCall('/api/dashboard'),
+  getProducts: async () => apiCall('/api/products'),
+  getQualityInteractions: async (limit = 50, sortBy = 'relevance') => apiCall(`/api/quality-interactions?limit=${limit}&sortBy=${sortBy}`),
+  getHotProducts: async (limit = 50, sortBy = 'hotScore') => apiCall(`/api/hot-products?limit=${limit}&sortBy=${sortBy}`),
+  getStockStatus: async () => apiCall('/api/stock-status'),
+  getSlowMoveAnalysis: async () => apiCall('/api/slow-move-analysis'),
+  getMovementAnalysis: async () => apiCall('/api/movement-analysis'),
+  getInteractions: async () => apiCall('/api/interactions'),
+  getUserInteractions: async (userId: string) => apiCall(`/api/interactions/${userId}`),
+  getFullAnalysis: async () => apiCall('/api/analysis'),
+  getDebugMapping: async () => apiCall('/api/debug/mapping'),
+  searchProducts: async (filters: any) => {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]: [string, any]) => {
+      if (value !== '' && value !== null && value !== undefined && value !== false) {
+        params.append(key, value.toString());
+      }
+    });
+    return apiCall(`/api/search?${params.toString()}`);
+  },
+  syncStock: async (skus: string[]) => apiCall('/api/sync-stock', { method: 'POST', body: JSON.stringify({ skus }) }),
+  syncAllStock: async () => apiCall('/api/sync-stock', { method: 'POST', body: JSON.stringify({ syncAll: true }) }),
+};
+
+/**
+ * RAG APIs
+ */
+export const ragApi = {
+  getAIMode: async () => apiCall('/api/rag/ai-mode'),
+  askQuestion: async (params: any) => apiCall('/api/rag/question', { method: 'POST', body: JSON.stringify(params) }),
+};
+
+/**
+ * Keyword Images APIs
+ */
+export const keywordImagesApi = {
+  getKeywords: async () => apiCall('/api/keyword-images/keywords'),
+  createKeyword: async (data: any) => apiCall('/api/keyword-images/keywords', { method: 'POST', body: JSON.stringify(data) }),
+  updateKeyword: async (keyword: string, data: any) => apiCall(`/api/keyword-images/keywords/${encodeURIComponent(keyword)}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteKeyword: async (keyword: string) => apiCall(`/api/keyword-images/keywords/${encodeURIComponent(keyword)}`, { method: 'DELETE' }),
+};
+
+/**
+ * Document APIs
+ */
+export const documentApi = {
+  getAllDocuments: async () => apiCall('/api/documents'),
+  uploadDocument: async (formData: FormData) => apiCallFile('/api/documents/upload', formData),
+  deleteDocument: async (id: string) => apiCall(`/api/documents/${id}`, { method: 'DELETE' }),
+  getDocumentContent: async (id: string) => apiCall(`/api/documents/${id}/content`),
+  updateDocument: async (id: string, data: any) => apiCall(`/api/documents/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  indexToRag: async (id: string) => apiCall(`/api/documents/${id}/index-to-rag`, { method: 'POST' }),
+  removeFromRag: async (id: string) => apiCall(`/api/documents/${id}/remove-from-rag`, { method: 'DELETE' }),
 };

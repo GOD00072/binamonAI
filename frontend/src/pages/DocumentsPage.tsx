@@ -8,6 +8,7 @@ import {
   RefreshIcon
 } from '../components/Icons';
 import '../styles/theme.css';
+import { documentApi } from '../services/api';
 
 interface Document {
   id: string;
@@ -44,11 +45,9 @@ const DocumentsPage: React.FC = () => {
   const loadDocuments = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://localhost:3001/api/documents');
-      const data = await response.json();
-
-      if (data.success) {
-        setDocuments(data.documents || []);
+      const response = await documentApi.getAllDocuments();
+      if (response.success && response.data) {
+        setDocuments(response.data.documents || []);
       }
     } catch (err: any) {
       setError('ไม่สามารถโหลดเอกสารได้');
@@ -82,14 +81,9 @@ const DocumentsPage: React.FC = () => {
       formData.append('file', selectedFile);
       formData.append('title', uploadTitle || selectedFile.name);
 
-      const response = await fetch('http://localhost:3001/api/documents/upload', {
-        method: 'POST',
-        body: formData
-      });
+      const response = await documentApi.uploadDocument(formData);
 
-      const data = await response.json();
-
-      if (data.success) {
+      if (response.success) {
         setSuccess('อัปโหลดเอกสารสำเร็จ');
         setTimeout(() => setSuccess(null), 3000);
         setShowUploadModal(false);
@@ -97,7 +91,7 @@ const DocumentsPage: React.FC = () => {
         setUploadTitle('');
         loadDocuments();
       } else {
-        throw new Error(data.error || 'ไม่สามารถอัปโหลดได้');
+        throw new Error(response.error || 'ไม่สามารถอัปโหลดได้');
       }
     } catch (err: any) {
       setError(err.message);
@@ -111,18 +105,14 @@ const DocumentsPage: React.FC = () => {
 
     try {
       setLoading(true);
-      const response = await fetch(`http://localhost:3001/api/documents/${id}`, {
-        method: 'DELETE'
-      });
+      const response = await documentApi.deleteDocument(id);
 
-      const data = await response.json();
-
-      if (data.success) {
+      if (response.success) {
         setSuccess('ลบเอกสารสำเร็จ');
         setTimeout(() => setSuccess(null), 3000);
         loadDocuments();
       } else {
-        throw new Error(data.error || 'ไม่สามารถลบได้');
+        throw new Error(response.error || 'ไม่สามารถลบได้');
       }
     } catch (err: any) {
       setError(err.message);
@@ -134,11 +124,10 @@ const DocumentsPage: React.FC = () => {
   const handleView = async (doc: Document) => {
     try {
       setLoading(true);
-      const response = await fetch(`http://localhost:3001/api/documents/${doc.id}/content`);
-      const data = await response.json();
+      const response = await documentApi.getDocumentContent(doc.id);
 
-      if (data.success) {
-        setSelectedDocument({ ...doc, content: data.content });
+      if (response.success && response.data) {
+        setSelectedDocument({ ...doc, content: response.data.content });
         setShowViewModal(true);
       }
     } catch (err: any) {
@@ -151,13 +140,12 @@ const DocumentsPage: React.FC = () => {
   const handleEdit = async (doc: Document) => {
     try {
       setLoading(true);
-      const response = await fetch(`http://localhost:3001/api/documents/${doc.id}/content`);
-      const data = await response.json();
+      const response = await documentApi.getDocumentContent(doc.id);
 
-      if (data.success) {
-        setEditingDocument({ ...doc, content: data.content });
+      if (response.success && response.data) {
+        setEditingDocument({ ...doc, content: response.data.content });
         setEditTitle(doc.title);
-        setEditContent(data.content || '');
+        setEditContent(response.data.content || '');
         setShowEditModal(true);
       }
     } catch (err: any) {
@@ -174,20 +162,12 @@ const DocumentsPage: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      const response = await fetch(`http://localhost:3001/api/documents/${editingDocument.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          title: editTitle,
-          content: editContent
-        })
+      const response = await documentApi.updateDocument(editingDocument.id, {
+        title: editTitle,
+        content: editContent
       });
 
-      const data = await response.json();
-
-      if (data.success) {
+      if (response.success) {
         setSuccess('แก้ไขเอกสารสำเร็จ');
         setTimeout(() => setSuccess(null), 3000);
         setShowEditModal(false);
@@ -196,7 +176,7 @@ const DocumentsPage: React.FC = () => {
         setEditContent('');
         loadDocuments();
       } else {
-        throw new Error(data.error || 'ไม่สามารถแก้ไขได้');
+        throw new Error(response.error || 'ไม่สามารถแก้ไขได้');
       }
     } catch (err: any) {
       setError(err.message);
@@ -212,18 +192,14 @@ const DocumentsPage: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      const response = await fetch(`http://localhost:3001/api/documents/${doc.id}/index-to-rag`, {
-        method: 'POST'
-      });
+      const response = await documentApi.indexToRag(doc.id);
 
-      const data = await response.json();
-
-      if (data.success) {
+      if (response.success) {
         setSuccess('Index เข้า Knowledge RAG สำเร็จ');
         setTimeout(() => setSuccess(null), 3000);
         loadDocuments();
       } else {
-        throw new Error(data.error || 'ไม่สามารถ index ได้');
+        throw new Error(response.error || 'ไม่สามารถ index ได้');
       }
     } catch (err: any) {
       setError(err.message);
@@ -239,18 +215,14 @@ const DocumentsPage: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      const response = await fetch(`http://localhost:3001/api/documents/${doc.id}/remove-from-rag`, {
-        method: 'DELETE'
-      });
+      const response = await documentApi.removeFromRag(doc.id);
 
-      const data = await response.json();
-
-      if (data.success) {
+      if (response.success) {
         setSuccess('ลบออกจาก Knowledge RAG สำเร็จ');
         setTimeout(() => setSuccess(null), 3000);
         loadDocuments();
       } else {
-        throw new Error(data.error || 'ไม่สามารถลบได้');
+        throw new Error(response.error || 'ไม่สามารถลบได้');
       }
     } catch (err: any) {
       setError(err.message);

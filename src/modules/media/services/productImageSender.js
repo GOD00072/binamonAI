@@ -459,7 +459,7 @@
             return uniqueUrls;
         }
 
-        async processOutgoingMessage(userId, message) {
+        async processOutgoingMessage(userId, message, channelAccessToken) {
             try {
                 this.logger.info('🔄 Processing outgoing message for images', {
                     userId: userId ? userId.substring(0, 10) + '...' : 'unknown',
@@ -495,7 +495,7 @@
                 for (const url of urls) {
                     try {
                         this.logger.info(`🔄 Processing URL: ${url}`);
-                        const result = await this.processUrlForImages(userId, url);
+                        const result = await this.processUrlForImages(userId, url, channelAccessToken);
                         results.push(result);
                         
                         if (result.sent && urls.indexOf(url) < urls.length - 1) {
@@ -533,7 +533,7 @@
             }
         }
 
-        async processUrlForImages(userId, url) {
+        async processUrlForImages(userId, url, channelAccessToken) {
             try {
                 const productData = await this.findProductByUrl(url);
                 
@@ -570,7 +570,7 @@
                     };
                 }
                 
-                const sendResult = await this.sendProductImages(userId, imagesToSend, productData);
+                const sendResult = await this.sendProductImages(userId, imagesToSend, productData, channelAccessToken);
                 
                 if (sendResult.success) {
                     this.updateUserSendHistory(userId, url, imagesToSend);
@@ -756,7 +756,7 @@
         }
 
         // *** Image Sending Methods ***
-        async sendProductImages(userId, images, productData) {
+        async sendProductImages(userId, images, productData, channelAccessToken) {
             try {
                 this.logger.info('Preparing to send product images', {
                     userId: userId.substring(0, 10) + '...',
@@ -770,14 +770,14 @@
                 // ส่งรูปภาพก่อน โดยไม่ส่งข้อความแนะนำ
                 switch (this.config.imageDisplayMode) {
                     case 'carousel':
-                        sendResult = await this.sendImageCarousel(userId, images, productData);
+                        sendResult = await this.sendImageCarousel(userId, images, productData, channelAccessToken);
                         break;
                     case 'flex':
-                        sendResult = await this.sendImageTemplate(userId, images, productData);
+                        sendResult = await this.sendImageTemplate(userId, images, productData, channelAccessToken);
                         break;
                     case 'individual':
                     default:
-                        sendResult = await this.sendIndividualImages(userId, images, productData);
+                        sendResult = await this.sendIndividualImages(userId, images, productData, channelAccessToken);
                         break;
                 }
 
@@ -790,7 +790,7 @@
                         const skuText = productData.sku ? ` รหัสสินค้า : ${productData.sku}` : '';
                         const introMessage = `📷 รูปภาพสินค้า: ${productData.productName} (${sendResult.imagesSent} รูป)${skuText}`;
                         
-                        await this.lineHandler.pushMessage(userId, introMessage, null, false);
+                        await this.lineHandler.pushMessage(userId, introMessage, null, false, channelAccessToken);
                         
                         this.logger.info('✅ Intro message sent AFTER images', {
                             userId: userId.substring(0, 10) + '...',
@@ -820,7 +820,7 @@
             }
         }
 
-        async sendIndividualImages(userId, images, productData) {
+        async sendIndividualImages(userId, images, productData, channelAccessToken) {
             try {
                 let successCount = 0;
                 let errors = [];
@@ -829,7 +829,7 @@
                     const image = images[i];
                     
                     try {
-                        const sendResult = await this.sendSingleImage(userId, image, i + 1, images.length);
+                        const sendResult = await this.sendSingleImage(userId, image, i + 1, images.length, channelAccessToken);
                         
                         if (sendResult.success) {
                             successCount++;
@@ -870,7 +870,7 @@
         }
     }
 
-    async sendSingleImage(userId, imageData, imageIndex, totalImages) {
+    async sendSingleImage(userId, imageData, imageIndex, totalImages, channelAccessToken) {
         try {
             // ตรวจสอบว่าไฟล์รูปภาพมีอยู่จริง
             if (!imageData.localPath || !await this.fileExists(imageData.localPath)) {
@@ -892,28 +892,11 @@
             // สร้าง URL โดยไม่แปลงไฟล์
             const imageUrl = await this.uploadOriginalToTempStorage(imageBuffer, imageData.filename);
             
-            // ส่งรูปผ่าน LINE API
-            const response = await axios.post(
-                'https://api.line.me/v2/bot/message/push',
-                {
-                    to: userId,
-                    messages: [{
-                        type: 'image',
-                        originalContentUrl: imageUrl,
-                        previewImageUrl: imageUrl
-                    }]
-                },
-                {
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}`
-                    },
-                    timeout: 30000
-                }
-            );
+            // ส่งรูปผ่าน LineHandler
+            const response = await this.lineHandler.sendImageMessage(userId, imageUrl, imageUrl, channelAccessToken);
             
-            if (response.status === 200) {
-                this.logger.info('Image sent successfully to LINE', {
+            if (response.success) {
+                this.logger.info('Image sent successfully via LineHandler', {
                     userId: userId.substring(0, 10) + '...',
                     filename: imageData.filename,
                     size: imageBuffer.length,
@@ -927,7 +910,7 @@
                     method: 'original'
                 };
             } else {
-                throw new Error(`LINE API error: ${response.status} - ${response.statusText}`);
+                throw new Error(`LineHandler error: ${response.error}`);
             }
             
         } catch (error) {
@@ -2304,111 +2287,46 @@ setTimeout(async () => {
     }
 
     // *** Advanced Image Sending Methods ***
-    async sendImageCarousel(userId, images, productData) {
-        try {
-            this.logger.info('Preparing image carousel', {
-                userId: userId.substring(0, 10) + '...',
-                productName: productData.productName,
-                imageCount: images.length
-            });
-
-            // เตรียมรูปภาพสำหรับ carousel (สูงสุด 10 รูป)
-            const carouselImages = images.slice(0, 10);
-            const columns = [];
-
-            for (let i = 0; i < carouselImages.length; i++) {
-                const image = carouselImages[i];
-                
-                try {
-                    // อัปโหลดไฟล์ต้นฉบับ
-                    const imageBuffer = await fs.readFile(image.localPath);
-                    const imageUrl = await this.uploadOriginalToTempStorage(imageBuffer, image.filename);
-                    
-                    if (imageUrl) {
-                        columns.push({
-                            imageUrl: imageUrl,
-                            action: {
-                                type: "uri",
-                                uri: imageUrl  // เปิดรูปภาพเต็มหน้าจอในเบราว์เซอร์
-                            }
-                        });
-                    }
-                } catch (imageError) {
-                    // แก้ไขการ log error เพื่อหลีกเลี่ยง circular reference
-                    this.logger.error(`Error preparing image ${i + 1} for carousel:`, {
-                        message: imageError.message,
-                        code: imageError.code,
-                        filename: image.filename,
-                        localPath: image.localPath
-                    });
+        async sendImageCarousel(userId, images, productData, channelAccessToken) {
+            try {
+                if (images.length === 0) {
+                    return { success: false, error: 'No images to send' };
                 }
-            }
-
-            if (columns.length === 0) {
-                throw new Error('No valid images to send in carousel');
-            }
-
-            // ส่ง Image Carousel
-            const response = await axios.post(
-                'https://api.line.me/v2/bot/message/push',
-                {
-                    to: userId,
-                    messages: [{
-                        type: "template",
-                        altText: `📷 รูปภาพสินค้า: ${productData.productName} (${columns.length} รูป)`,
-                        template: {
-                            type: "image_carousel",
-                            columns: columns
+    
+                const columns = await Promise.all(images.map(async (image) => {
+                    const imageUrl = await this.uploadOriginalToTempStorage(image.buffer, image.filename);
+                    return {
+                        type: 'bubble',
+                        hero: {
+                            type: 'image',
+                            url: imageUrl,
+                            size: 'full',
+                            aspectRatio: '1:1',
+                            aspectMode: 'cover'
                         }
-                    }]
-                },
-                {
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}`
-                    },
-                    timeout: 30000
-                }
-            );
-
-            if (response.status === 200) {
-                this.logger.info('Image carousel sent successfully', {
-                    userId: userId.substring(0, 10) + '...',
-                    productName: productData.productName,
-                    imageCount: columns.length
-                });
-
+                    };
+                }));
+    
+                const flexContent = {
+                    type: 'carousel',
+                    contents: columns
+                };
+    
+                const altText = `รูปภาพสินค้า: ${productData.productName}`;
+                const result = await this.lineHandler.sendFlexMessage(userId, flexContent, altText, channelAccessToken);
+    
                 return {
-                    success: true,
-                    imagesSent: columns.length,
-                    totalImages: images.length,
+                    success: result.success,
+                    imagesSent: result.success ? images.length : 0,
+                    error: result.success ? null : result.error,
                     method: 'carousel'
                 };
-            } else {
-                throw new Error(`LINE API error: ${response.status} - ${response.statusText}`);
+            } catch (error) {
+                this.logger.error('Error sending image carousel:', error);
+                return { success: false, error: error.message };
             }
-
-        } catch (error) {
-            // แก้ไขการ log error หลักเพื่อหลีกเลี่ยง circular reference
-            const errorDetails = {
-                message: error.message,
-                code: error.code,
-                status: error.response?.status,
-                statusText: error.response?.statusText,
-                method: 'carousel'
-            };
-
-            this.logger.error('Error sending image carousel:', errorDetails);
-            
-            return {
-                success: false,
-                error: error.message,
-                method: 'carousel'
-            };
         }
-    }
-
-    async sendImageTemplate(userId, images, productData) {
+    async sendImageTemplate(userId, images, productData, channelAccessToken) {
         try {
             this.logger.info('Sending images as Flex Message template', {
                 imageCount: images.length,
@@ -2438,26 +2356,10 @@ setTimeout(async () => {
             // สร้าง Flex Message
             const flexMessage = this.createImageFlexMessage(imageUrls, productData, images.length);
 
-            const response = await axios.post(
-                'https://api.line.me/v2/bot/message/push',
-                {
-                    to: userId,
-                    messages: [{
-                        type: 'flex',
-                        altText: `รูปภาพสินค้า: ${productData.productName}`,
-                        contents: flexMessage
-                    }]
-                },
-                {
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}`
-                    },
-                    timeout: 30000
-                }
-            );
+            const altText = `รูปภาพสินค้า: ${productData.productName}`;
+            const response = await this.lineHandler.sendFlexMessage(userId, flexMessage, altText, channelAccessToken);
 
-            if (response.status === 200) {
+            if (response.success) {
                 return {
                     success: true,
                     imagesSent: imageUrls.length,
@@ -2465,7 +2367,7 @@ setTimeout(async () => {
                     method: 'flex_message'
                 };
             } else {
-                throw new Error(`LINE API error: ${response.status} - ${response.statusText}`);
+                throw new Error(`LINE API error: ${response.error}`);
             }
 
         } catch (error) {

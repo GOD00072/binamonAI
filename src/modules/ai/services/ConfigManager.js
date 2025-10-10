@@ -1545,7 +1545,7 @@ class ConfigManager {
             const systemPrompt = conversation?.personality || this.languageTemplates[this.defaultLanguage].conversation.personality;
             const temperature = generation.temperature ?? this.generationConfig.temperature;
             const maxTokens = generation.maxOutputTokens ?? this.generationConfig.maxOutputTokens;
-            const modelName = generation.modelName ?? this.MODEL_NAME;
+            const modelName = settings?.modelConfig?.modelName ?? this.MODEL_NAME;
             const useProductRAG = knowledge.useProductRAG ?? knowledge.enabled ?? this.knowledgeConfig.useProductRAG ?? true;
             const useKnowledgeRAG = knowledge.useKnowledgeRAG ?? knowledge.enabled ?? this.knowledgeConfig.useKnowledgeRAG ?? true;
             const maxContextMessages = contextOptions.maxContextMessages ?? null;
@@ -1561,7 +1561,7 @@ class ConfigManager {
                         use_product_rag: useProductRAG,
                         use_knowledge_rag: useKnowledgeRAG,
                         temperature,
-                        model_name: modelName,
+                        text_model_name: modelName,
                         max_tokens: maxTokens,
                         ...(maxContextMessages !== null ? { max_context_messages: maxContextMessages } : {}),
                         ...(includeUserHistory !== null ? { include_user_history: includeUserHistory } : {})
@@ -1572,7 +1572,7 @@ class ConfigManager {
                         use_product_rag: useProductRAG,
                         use_knowledge_rag: useKnowledgeRAG,
                         temperature,
-                        model_name: modelName,
+                        text_model_name: modelName,
                         max_tokens: maxTokens,
                         max_context_messages: maxContextMessages ?? 10,
                         include_user_history: includeUserHistory ?? true

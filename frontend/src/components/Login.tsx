@@ -23,12 +23,12 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     try {
       const response = await authApi.login(username, password);
 
-      if (response.token && response.user) {
-        localStorage.setItem('auth_token', response.token);
-        localStorage.setItem('user_data', JSON.stringify(response.user));
-        onLoginSuccess(response.token, response.user);
+      if (response.success && response.data?.token && response.data?.user) {
+        localStorage.setItem('auth_token', response.data.token);
+        localStorage.setItem('user_data', JSON.stringify(response.data.user));
+        onLoginSuccess(response.data.token, response.data.user);
       } else {
-        throw new Error('Invalid response from server');
+        throw new Error(response.message || 'Invalid response from server');
       }
     } catch (err: any) {
       console.error('Login error:', err);

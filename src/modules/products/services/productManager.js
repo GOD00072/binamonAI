@@ -45,7 +45,16 @@ class EnhancedProductManager {
 
             await fs.mkdir(this.productsDir, { recursive: true });
             await this.configService.loadConfiguration();
-            await this.vectorDBService.initialize(process.env.PINECONE_API_KEY, process.env.PINECONE_INDEX_NAME);
+
+            // Load VectorDB config from database
+            const vectorDBConfig = await prisma.vectorDBConfig.findUnique({
+                where: { key: 'default' }
+            });
+
+            // Use the API key from the database config, or fallback to environment variable
+            const openaiApiKey = vectorDBConfig?.apiKey || process.env.OPENAI_API_KEY;
+
+            await this.vectorDBService.initialize(openaiApiKey, process.env.PINECONE_INDEX_NAME);
             this.metadataService.initialize();
             this.enhancementService.initialize();
             

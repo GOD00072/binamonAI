@@ -10,7 +10,6 @@ const { DATA_DIR } = require('../../../app/paths');
 class KeywordDetector {
     constructor(logger) {
         this.logger = logger;
-        this.lineToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
         this.prismaService = new PrismaService(logger);
         
         if (!this.lineToken) {
@@ -341,7 +340,7 @@ class KeywordDetector {
         }
     }
 
-    async processOutgoingMessage(userId, message) {
+    async processOutgoingMessage(userId, message, channelAccessToken) {
         try {
             this.logger.info('🔍 Processing outgoing message for keyword detection', {
                 userId: userId ? userId.substring(0, 10) + '...' : 'missing',
@@ -412,7 +411,7 @@ class KeywordDetector {
                     matchedKeyword: matchedKeyword
                 });
                 
-                const result = await this.sendFlexMessage(userId);
+                const result = await this.sendFlexMessage(userId, channelAccessToken);
                 
                 if (result) {
                     this.markUserAsSent(userId);
@@ -528,12 +527,11 @@ class KeywordDetector {
         });
     }
     
-    async sendFlexMessage(userId) {
+    async sendFlexMessage(userId, channelAccessToken) {
         try {
             this.logger.info('📱 Starting flex message send process', {
                 userId: userId ? userId.substring(0, 10) + '...' : 'missing',
-                hasLineToken: !!this.lineToken,
-                tokenPreview: this.lineToken ? this.lineToken.substring(0, 10) + '...' : 'missing'
+                hasToken: !!channelAccessToken
             });
             
             if (!userId) {
@@ -541,10 +539,8 @@ class KeywordDetector {
                 return false;
             }
 
-            if (!this.lineToken) {
-                this.logger.error('❌ Cannot send flex message: LINE token not available', {
-                    envVariableName: 'LINE_CHANNEL_ACCESS_TOKEN'
-                });
+            if (!channelAccessToken) {
+                this.logger.error('❌ Cannot send flex message: channelAccessToken not available');
                 return false;
             }
 
@@ -579,7 +575,7 @@ class KeywordDetector {
             
             const requestHeaders = {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${this.lineToken}`
+                'Authorization': `Bearer ${channelAccessToken}`
             };
             
             this.logger.info('🌐 Sending request to LINE API', {
@@ -657,7 +653,7 @@ class KeywordDetector {
         }
     }
 
-    async sendTextMessage(userId, text) {
+    async sendTextMessage(userId, text, channelAccessToken) {
         try {
             this.logger.info('📝 Sending fallback text message', {
                 userId: userId ? userId.substring(0, 10) + '...' : 'missing',
@@ -677,7 +673,7 @@ class KeywordDetector {
                 {
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${this.lineToken}`
+                        'Authorization': `Bearer ${channelAccessToken}`
                     },
                     timeout: 10000
                 }
@@ -814,7 +810,7 @@ class KeywordDetector {
                 userId: event.userId ? event.userId.substring(0, 10) + '...' : 'missing'
             });
             
-            const { data, userId } = event;
+            const { data, userId, channelAccessToken } = event;
             
             if (!data || !userId) {
                 this.logger.warn('⚠️ Incomplete postback data', {
@@ -849,7 +845,7 @@ class KeywordDetector {
                     
                     // Confirm to the user
                     if (result !== undefined) {
-                        await this.sendTextMessage(userId, 'ปิดใช้งาน AI เรียบร้อยแล้ว');
+                        await this.sendTextMessage(userId, 'ปิดใช้งาน AI เรียบร้อยแล้ว', channelAccessToken);
                         this.logger.info('✅ AI disabled successfully and confirmation sent', {
                             userId: userId.substring(0, 10) + '...'
                         });
@@ -858,14 +854,14 @@ class KeywordDetector {
                             userId: userId.substring(0, 10) + '...',
                             result: result
                         });
-                        await this.sendTextMessage(userId, 'เกิดข้อผิดพลาดในการปิดใช้งาน AI กรุณาลองอีกครั้งในภายหลัง');
+                        await this.sendTextMessage(userId, 'เกิดข้อผิดพลาดในการปิดใช้งาน AI กรุณาลองอีกครั้งในภายหลัง', channelAccessToken);
                     }
                 } else {
                     this.logger.error('❌ Line handler not connected to keyword detector', {
                         userId: userId.substring(0, 10) + '...',
                         lineHandlerStatus: 'not connected'
                     });
-                    await this.sendTextMessage(userId, 'เกิดข้อผิดพลาดในการปิดใช้งาน AI กรุณาลองอีกครั้งในภายหลัง');
+                    await this.sendTextMessage(userId, 'เกิดข้อผิดพลาดในการปิดใช้งาน AI กรุณาลองอีกครั้งในภายหลัง', channelAccessToken);
                 }
             } else if (data === 'action=enable_ai') {
                 // Handle AI enable request
@@ -889,7 +885,7 @@ class KeywordDetector {
                     
                     // Confirm to the user
                     if (result !== undefined) {
-                        await this.sendTextMessage(userId, 'เปิดใช้งาน AI เรียบร้อยแล้ว');
+                        await this.sendTextMessage(userId, 'เปิดใช้งาน AI เรียบร้อยแล้ว', channelAccessToken);
                         this.logger.info('✅ AI enabled successfully and confirmation sent', {
                             userId: userId.substring(0, 10) + '...'
                         });
@@ -898,14 +894,14 @@ class KeywordDetector {
                             userId: userId.substring(0, 10) + '...',
                             result: result
                         });
-                        await this.sendTextMessage(userId, 'เกิดข้อผิดพลาดในการเปิดใช้งาน AI กรุณาลองอีกครั้งในภายหลัง');
+                        await this.sendTextMessage(userId, 'เกิดข้อผิดพลาดในการเปิดใช้งาน AI กรุณาลองอีกครั้งในภายหลัง', channelAccessToken);
                     }
                 } else {
                     this.logger.error('❌ Line handler not connected to keyword detector', {
                         userId: userId.substring(0, 10) + '...',
                         lineHandlerStatus: 'not connected'
                     });
-                    await this.sendTextMessage(userId, 'เกิดข้อผิดพลาดในการเปิดใช้งาน AI กรุณาลองอีกครั้งในภายหลัง');
+                    await this.sendTextMessage(userId, 'เกิดข้อผิดพลาดในการเปิดใช้งาน AI กรุณาลองอีกครั้งในภายหลัง', channelAccessToken);
                 }
             } else {
                 // Handle other custom postback actions if needed

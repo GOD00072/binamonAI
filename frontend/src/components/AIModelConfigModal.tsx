@@ -5,6 +5,7 @@ import { AISettings, GenerationConfig, ModelConfig, TemplateConfig } from '../ty
 import ModelSelectionCard from './ModelSelectionCard';
 import GenerationConfigPanel from './GenerationConfigPanel';
 import ModelTestPanel from './ModelTestPanel';
+import { aiModelApi, aiTestApi, languageApi } from '../services/api';
 
 interface ModelInfo {
     name: string;
@@ -98,35 +99,23 @@ const AIModelConfigModal: React.FC<AIModelConfigModalProps> = ({
 
         try {
             // 1. Fetch available models (global list)
-            const modelsResponse = await fetch('http://localhost:3001/api/config/ai/models', {
-                headers: { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` }
-            });
-            if (!modelsResponse.ok) throw new Error('ไม่สามารถโหลดรายการโมเดลได้');
-            const modelsData = await modelsResponse.json();
-            if (modelsData.success && modelsData.models) {
-                fetchedModels = modelsData.models;
+            const modelsResponse = await aiModelApi.getAllModels();
+            if (modelsResponse.success && modelsResponse.data) {
+                fetchedModels = modelsResponse.data.models;
                 setAvailableModels(fetchedModels);
             } else {
-                throw new Error(modelsData.error || 'ไม่สามารถแยกแยะรายการโมเดลได้');
+                throw new Error(modelsResponse.error || 'ไม่สามารถแยกแยะรายการโมเดลได้');
             }
 
             // 2. Fetch current configuration for the specific language
-            const configResponse = await fetch(`http://localhost:3001/api/config/language/${language}`, {
-                headers: { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` }
-            });
+            const configResponse = await languageApi.getLanguageConfig(language);
 
-            if (configResponse.ok) {
-                const configData = await configResponse.json();
-                if (configData.success && configData.settings) {
-                    initialSettings = { // Ensure all parts of AISettings are present
-                        modelConfig: configData.settings.modelConfig || createDefaultAISettings().modelConfig,
-                        generationConfig: configData.settings.generationConfig || createDefaultAISettings().generationConfig,
-                        templateConfig: configData.settings.templateConfig || createDefaultAISettings().templateConfig,
-                    };
-                } else {
-                    // Config not found or not successful, use defaults but log it
-                    console.warn(`การตั้งค่าสำหรับภาษา ${language} ไม่พบหรือมีข้อผิดพลาด, ใช้ค่าเริ่มต้น`);
-                }
+            if (configResponse.success && configResponse.data) {
+                initialSettings = { // Ensure all parts of AISettings are present
+                    modelConfig: configResponse.data.settings.modelConfig || createDefaultAISettings().modelConfig,
+                    generationConfig: configResponse.data.settings.generationConfig || createDefaultAISettings().generationConfig,
+                    templateConfig: configResponse.data.settings.templateConfig || createDefaultAISettings().templateConfig,
+                };
             } else {
                  console.warn(`ไม่สามารถโหลดการตั้งค่าสำหรับภาษา ${language} (สถานะ: ${configResponse.status}), ใช้ค่าเริ่มต้น`);
             }
@@ -165,26 +154,18 @@ const AIModelConfigModal: React.FC<AIModelConfigModalProps> = ({
        setRefreshing(true);
        setAlert(null);
        try {
-           const response = await fetch('http://localhost:3001/api/config/ai/models/refresh', {
-               method: 'POST',
-               headers: { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` }
-           });
-           const data = await response.json();
-           if (data.success) {
+           const response = await aiModelApi.refreshModels();
+           if (response.success) {
                // Re-load available models, language config might still be relevant or could be re-fetched too
                // For now, just reloading model list and current selection based on it.
-                const modelsResponse = await fetch('http://localhost:3001/api/config/ai/models', {
-                    headers: { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` }
-                });
-                if (!modelsResponse.ok) throw new Error('Failed to reload models list after refresh');
-                const modelsData = await modelsResponse.json();
-                if (modelsData.success && modelsData.models) {
-                    setAvailableModels(modelsData.models || []);
+                const modelsResponse = await aiModelApi.getAllModels();
+                if (modelsResponse.success && modelsResponse.data) {
+                    setAvailableModels(modelsResponse.data.models || []);
                 }
 
                setAlert({ message: 'รีเฟรชรายการโมเดลสำเร็จ', type: 'success' });
            } else {
-               throw new Error(data.error || 'ไม่สามารถรีเฟรชได้');
+               throw new Error(response.error || 'ไม่สามารถรีเฟรชได้');
            }
        } catch (error) {
            console.error('Error refreshing models:', error);
@@ -222,17 +203,9 @@ const AIModelConfigModal: React.FC<AIModelConfigModalProps> = ({
                generationConfig: generationConfig, // Persist current generation config as well
            };
 
-           const response = await fetch(`http://localhost:3001/api/config/language/${language}`, {
-               method: 'POST',
-               headers: {
-                   'Content-Type': 'application/json',
-                   'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-               },
-               body: JSON.stringify(settingsToSave)
-           });
+           const response = await languageApi.saveLanguageConfig(language, settingsToSave);
 
-           const data = await response.json();
-           if (data.success) {
+           if (response.success) {
                setModelForLanguage(selectedModelInUI); // Update the persisted model for the language
                setCurrentLanguageSettings(settingsToSave); // Update the full settings state
 
@@ -245,7 +218,7 @@ const AIModelConfigModal: React.FC<AIModelConfigModalProps> = ({
                if (onConfigSaved) onConfigSaved(settingsToSave);
                
            } else {
-               throw new Error(data.error || 'ไม่สามารถเปลี่ยนโมเดลได้');
+               throw new Error(response.error || 'ไม่สามารถเปลี่ยนโมเดลได้');
            }
        } catch (error) {
            console.error('Error switching model:', error);
@@ -260,31 +233,23 @@ const AIModelConfigModal: React.FC<AIModelConfigModalProps> = ({
 
    const testModel = async (query: string): Promise<TestResult> => {
        try {
-           const response = await fetch('/api/ai/test-model', { // This API likely uses the globally active model or one specified
-               method: 'POST',
-               headers: {
-                   'Content-Type': 'application/json',
-                   'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-               },
-               body: JSON.stringify({
-                   modelName: selectedModelInUI, // Test with the UI selected model
-                   testQuery: query,
-                   // If your test API can accept generationConfig, pass it:
-                   // generationConfig: generationConfig 
-               })
+           const response = await aiTestApi.testModel({ // This API likely uses the globally active model or one specified
+               modelName: selectedModelInUI, // Test with the UI selected model
+               testQuery: query,
+               // If your test API can accept generationConfig, pass it:
+               // generationConfig: generationConfig 
            });
 
-           const data = await response.json();
-           if (data.success) {
+           if (response.success && response.data) {
                return {
                    success: true,
-                   response: data.result?.response || data.response,
+                   response: response.data.result?.response || response.data.response,
                    modelName: selectedModelInUI,
-                   tokens: data.result?.tokens,
-                   duration: data.result?.duration
+                   tokens: response.data.result?.tokens,
+                   duration: response.data.result?.duration
                };
            } else {
-               throw new Error(data.error || 'ทดสอบล้มเหลว');
+               throw new Error(response.error || 'ทดสอบล้มเหลว');
            }
        } catch (error) {
            throw new Error(error instanceof Error ? error.message : 'Unknown error');
@@ -319,17 +284,9 @@ const AIModelConfigModal: React.FC<AIModelConfigModalProps> = ({
                generationConfig: generationConfig, // The generationConfig being edited
            };
 
-           const response = await fetch(`http://localhost:3001/api/config/language/${language}`, {
-               method: 'POST',
-               headers: {
-                   'Content-Type': 'application/json',
-                   'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-               },
-               body: JSON.stringify(settingsToSave)
-           });
+           const response = await languageApi.saveLanguageConfig(language, settingsToSave);
 
-           const data = await response.json();
-           if (data.success) {
+           if (response.success) {
                setCurrentLanguageSettings(settingsToSave); // Update the full settings state
                // If selectedModelInUI was different and now saved, modelForLanguage might need update if this save implies model change too
                setModelForLanguage(settingsToSave.modelConfig.modelName);
@@ -344,7 +301,7 @@ const AIModelConfigModal: React.FC<AIModelConfigModalProps> = ({
                    onConfigSaved(settingsToSave);
                }
            } else {
-               throw new Error(data.error || 'ไม่สามารถบันทึกได้');
+               throw new Error(response.error || 'ไม่สามารถบันทึกได้');
            }
        } catch (error) {
            console.error('Error saving config:', error);

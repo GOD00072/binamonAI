@@ -19,7 +19,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     { path: '/image-config', icon: 'fas fa-images', label: 'จัดการรูปภาพ' },
     { path: '/documents', icon: 'fas fa-file-lines', label: 'เอกสาร' },
     { path: '/vector-db', icon: 'fas fa-database', label: 'Vector DB' },
-    { path: '/context-window', icon: 'fas fa-window-maximize', label: 'Context Window' }
+    { path: '/context-window', icon: 'fas fa-window-maximize', label: 'Context Window' },
+    { path: '/line-oa-config', icon: 'fas fa-cog', label: 'LINE OA Configs' },
+    { path: '/ai-personalities', icon: 'fas fa-brain', label: 'AI Personalities' }
   ];
 
   const isActive = (path: string) => {

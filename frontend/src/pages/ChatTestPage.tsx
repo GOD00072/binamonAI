@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Card, Button, Form, Badge, Alert, Spinner, Row, Col, Accordion } from 'react-bootstrap';
+import { aiTestApi } from '../services/api';
 
 interface ChatMessage {
   id: string;
@@ -67,43 +68,34 @@ const ChatTestPage: React.FC = () => {
     setError(null);
 
     try {
-      const response = await fetch('http://localhost:3001/api/ai/chat-test', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+      const response = await aiTestApi.chatTest({
+        query: inputMessage,
+        userId: sessionId,
+        useKnowledge: options.useKnowledge,
+        includeProducts: options.includeProducts,
+        knowledgeOptions: {
+          topK: options.knowledgeTopK,
+          scoreThreshold: options.knowledgeThreshold,
         },
-        body: JSON.stringify({
-          query: inputMessage,
-          userId: sessionId,
-          useKnowledge: options.useKnowledge,
-          includeProducts: options.includeProducts,
-          knowledgeOptions: {
-            topK: options.knowledgeTopK,
-            scoreThreshold: options.knowledgeThreshold,
-          },
-          generationConfig: {
-            temperature: options.temperature,
-            maxOutputTokens: options.maxTokens,
-            topP: options.topP,
-            topK: options.topK,
-          },
-        }),
+        generationConfig: {
+          temperature: options.temperature,
+          maxOutputTokens: options.maxTokens,
+          topP: options.topP,
+          topK: options.topK,
+        },
       });
 
-      const data = await response.json();
-
-      if (data.success) {
+      if (response.success && response.data) {
         const assistantMessage: ChatMessage = {
           id: `msg-${Date.now()}-ai`,
           role: 'assistant',
-          content: data.response,
+          content: response.data.response,
           timestamp: Date.now(),
           metadata: {
-            tokens: data.tokens,
-            processingTime: data.processingTime,
-            modelUsed: data.metadata?.modelUsed,
-            language: data.metadata?.language,
+            tokens: response.data.tokens,
+            processingTime: response.data.processingTime,
+            modelUsed: response.data.metadata?.modelUsed,
+            language: response.data.metadata?.language,
           },
         };
 
@@ -112,13 +104,13 @@ const ChatTestPage: React.FC = () => {
         // Update stats
         setStats((prev) => ({
           totalMessages: prev.totalMessages + 1,
-          totalTokens: prev.totalTokens + (data.tokens?.total || 0),
+          totalTokens: prev.totalTokens + (response.data.tokens?.total || 0),
           averageProcessingTime:
-            (prev.averageProcessingTime * prev.totalMessages + data.processingTime) /
+            (prev.averageProcessingTime * prev.totalMessages + response.data.processingTime) /
             (prev.totalMessages + 1),
         }));
       } else {
-        throw new Error(data.error || 'Failed to get response');
+        throw new Error(response.error || 'Failed to get response');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error occurred');

@@ -479,7 +479,7 @@ class WebSocketManager extends EventEmitter {
         return false;
     }
 
-    async handleAIResponseReceived(userId, messageId, aiResponse) {
+    async handleAIResponseReceived(userId, messageId, aiResponse, channelAccessToken) {
         try {
             const processingData = this.aiProcessingQueue.get(userId);
             if (processingData && processingData.timer) {
@@ -488,9 +488,9 @@ class WebSocketManager extends EventEmitter {
             this.aiProcessingQueue.delete(userId);
             
             if (this.config.enableAdminReview) {
-                await this.requestAdminReview(userId, messageId, aiResponse);
+                await this.requestAdminReview(userId, messageId, aiResponse, channelAccessToken);
             } else {
-                await this.sendAIResponse(userId, aiResponse, messageId);
+                await this.sendAIResponse(userId, aiResponse, messageId, channelAccessToken);
             }
             
         } catch (error) {
@@ -499,7 +499,7 @@ class WebSocketManager extends EventEmitter {
         }
     }
 
-    async requestAdminReview(userId, originalMessageId, aiResponse) {
+    async requestAdminReview(userId, originalMessageId, aiResponse, channelAccessToken) {
         const responseId = `resp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         
         const reviewData = {
@@ -508,7 +508,8 @@ class WebSocketManager extends EventEmitter {
             response: aiResponse, // *** แก้ไข: เก็บ object เต็ม ***
             adminReview: 'pending',
             timestamp: Date.now(),
-            timer: null
+            timer: null,
+            channelAccessToken: channelAccessToken // Store the token
         };
         
         if (this.config.enableAutoSend && this.config.adminReviewDelay > 0) {
@@ -551,7 +552,7 @@ class WebSocketManager extends EventEmitter {
                 clearTimeout(reviewData.timer);
             }
             
-            await this.sendAIResponse(userId, reviewData.response, reviewData.messageId);
+            await this.sendAIResponse(userId, reviewData.response, reviewData.messageId, reviewData.channelAccessToken);
             this.pendingAIResponses.delete(userId);
             
             this.io.emit('ai_response_approved_and_sent', {
@@ -593,7 +594,7 @@ class WebSocketManager extends EventEmitter {
         }
     }
 
-    async sendAIResponse(userId, aiResponseObject, originalMessageId) {
+    async sendAIResponse(userId, aiResponseObject, originalMessageId, channelAccessToken) {
         try {
             if (!this.lineHandler || typeof this.lineHandler.pushMessage !== 'function') {
                 throw new Error('LineHandler is not available or not properly configured.');
@@ -618,7 +619,8 @@ class WebSocketManager extends EventEmitter {
                aiTextResponse,
                modelMessageId,
                false,
-               'webSocketManager'
+               'webSocketManager',
+               channelAccessToken
            );
            
            // บันทึกลงประวัติ

@@ -10,7 +10,8 @@ class LineMessageHandler {
       this.productManager = productManager;
       this.chatHistory = chatHistory;
       this.messageHandler = messageHandler;
-      this.lineToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+      
+      // Service connections
       
       // Service connections
       this.imageHandler = null;
@@ -190,7 +191,7 @@ setKeywordImageSender(keywordImageSender) {
  // *** Main Message Handling ***
  async handleMessage(event) {
      try {
-         const { message, source, replyToken } = event;
+         const { message, source, replyToken, channelAccessToken } = event;
          const userId = source.userId;
  
          this.logger.info('Received LINE message:', {
@@ -199,15 +200,21 @@ setKeywordImageSender(keywordImageSender) {
              messageId: message.id
          });
  
+         if (!channelAccessToken) {
+             this.logger.error('handleMessage called without a channelAccessToken in the event object', { userId, messageId: message.id });
+             // Cannot proceed without a token
+             return;
+         }
+
          switch (message.type) {
              case 'text':
-                 await this.handleTextMessage(userId, message.text, replyToken);
+                 await this.handleTextMessage(userId, message.text, replyToken, channelAccessToken);
                  break;
              case 'image':
-                 await this.handleImageMessage(message.id, message.contentProvider, userId, replyToken);
+                 await this.handleImageMessage(message.id, message.contentProvider, userId, replyToken, channelAccessToken);
                  break;
              case 'sticker':
-                 await this.handleSticker(replyToken);
+                 await this.handleSticker(replyToken, channelAccessToken);
                  break;
              default:
                  this.logger.info('Unsupported message type', { 
@@ -307,7 +314,7 @@ setKeywordImageSender(keywordImageSender) {
  }
 
  // *** Text Message Handling ***
- async handleTextMessage(userId, text, replyToken) {
+ async handleTextMessage(userId, text, replyToken, channelAccessToken) {
   try {
       const timestamp = Date.now();
       
@@ -418,7 +425,7 @@ setKeywordImageSender(keywordImageSender) {
                   const originalReplyToken = this.pendingMessages.get(userId).replyToken;
                   
                   this.pendingMessages.delete(userId);
-                  await this.processUserMessage(userId, combinedText, originalReplyToken);
+                  await this.processUserMessage(userId, combinedText, originalReplyToken, null, channelAccessToken);
               }
           }, this.MESSAGE_PENDING_TTL / 2);
           
@@ -454,7 +461,7 @@ setKeywordImageSender(keywordImageSender) {
                       : this.aggregatePendingMessages(pendingMsgs.texts);
                   
                   this.pendingMessages.delete(userId);
-                  await this.processUserMessage(userId, combinedText, pendingMsgs.replyToken);
+                  await this.processUserMessage(userId, combinedText, pendingMsgs.replyToken, null, channelAccessToken);
               }
           }, this.MESSAGE_PENDING_TTL / 2);
           
@@ -480,12 +487,12 @@ setKeywordImageSender(keywordImageSender) {
       });
       
       // Fallback: process message directly
-      await this.processUserMessage(userId, text || '', replyToken);
+      await this.processUserMessage(userId, text || '', replyToken, null, channelAccessToken);
   }
 }
 
 // *** Image Message Handling ***
-async handleImageMessage(messageId, contentProvider, userId, replyToken) {
+async handleImageMessage(messageId, contentProvider, userId, replyToken, channelAccessToken) {
   try {
       this.logger.info('Image message received', { 
           userId: userId ? userId.substring(0, 10) + '...' : 'unknown',
@@ -533,7 +540,8 @@ async handleImageMessage(messageId, contentProvider, userId, replyToken) {
           contentProvider, 
           replyToken,
           timestamp,
-          existingComment: existingComment
+          existingComment: existingComment,
+          channelAccessToken: channelAccessToken // Store the token
       });
 
       if (this.webSocketManager) {
@@ -597,13 +605,21 @@ async handleImageMessage(messageId, contentProvider, userId, replyToken) {
                   });
               }
               
-              // Process image with final comment
+              // Fetch the full OA config to get the context window
+              const oaConfig = await prisma.lineOaConfig.findFirst({
+                  where: { channelAccessToken: pendingImg.channelAccessToken },
+                  include: { contextWindow: true }
+              });
+
+              // Process image with final comment and context window
               await this.imageHandler.processLineImage(
                   pendingImg.messageId,
                   pendingImg.contentProvider,
                   userId,
                   pendingImg.replyToken,
-                  finalUserComment
+                  finalUserComment,
+                  pendingImg.channelAccessToken,
+                  oaConfig?.contextWindow // Pass the context window
               );
               
               this.pendingImages.delete(userId);
@@ -630,10 +646,10 @@ async handleImageMessage(messageId, contentProvider, userId, replyToken) {
 }
 
  // *** Sticker Handling ***
- async handleSticker(replyToken) {
+ async handleSticker(replyToken, channelAccessToken) {
      try {
          this.logger.info('Sticker received - responding with thank you message');
-         await this.replyMessage(replyToken, 'ขอบคุณสำหรับสติ๊กเกอร์น่ารักๆ นะคะ');
+         await this.replyMessage(replyToken, 'ขอบคุณสำหรับสติ๊กเกอร์น่ารักๆ นะคะ', channelAccessToken);
      } catch (error) {
          this.logger.error('Error handling sticker:', error);
      }
@@ -641,7 +657,7 @@ async handleImageMessage(messageId, contentProvider, userId, replyToken) {
 
  // *** Main User Message Processing ***
 // *** Main User Message Processing ***
-async processUserMessage(userId, text, replyToken, messageId) {
+async processUserMessage(userId, text, replyToken, messageId, channelAccessToken) {
     try {
         if (!text) {
             this.logger.error('Received null/undefined text in processUserMessage');
@@ -751,8 +767,15 @@ async processUserMessage(userId, text, replyToken, messageId) {
             }
         }
 
+        // Fetch the OA configuration to get the context window settings
+        const oaConfig = await prisma.lineOaConfig.findFirst({
+            where: { channelAccessToken: channelAccessToken },
+            include: { contextWindow: true }
+        });
+        const contextWindow = oaConfig?.contextWindow;
+
         // Proceed with AI processing
-        await this.sendLoadingAnimation(userId);
+        await this.sendLoadingAnimation(userId, 60, channelAccessToken);
 
         // Notify that we're searching for products
         if (this.webSocketManager) {
@@ -824,7 +847,9 @@ async processUserMessage(userId, text, replyToken, messageId) {
             response = await this.aiAssistant.generateResponse(
                 text || '',
                 searchResults.results || [],
-                userId
+                userId,
+                {},
+                contextWindow // Pass the specific context window config
             );
             if (!response) {
                 throw new Error('No response returned from AI assistant');
@@ -870,14 +895,14 @@ async processUserMessage(userId, text, replyToken, messageId) {
                 responseLength: responseText.length
             });
             
-            await this.webSocketManager.handleAIResponseReceived(userId, messageId, response);
+            await this.webSocketManager.handleAIResponseReceived(userId, messageId, response, channelAccessToken);
         } else {
             // Fallback: send directly if no WebSocket Manager
             this.logger.warn('No WebSocket Manager available, sending AI response directly', {
                 userId: userId ? userId.substring(0, 10) + '...' : 'unknown'
             });
             
-            await this.sendAIResponseDirectly(userId, responseText, response, replyToken);
+            await this.sendAIResponseDirectly(userId, responseText, response, replyToken, channelAccessToken);
         }
 
         if (this.messageHandler && messageId) {
@@ -923,7 +948,7 @@ async processUserMessage(userId, text, replyToken, messageId) {
 
  // *** Product Image Processing Method ***
  // *** Product Image Processing Method ***
-async processAndSendImages(userId, message, source = 'unknown') {
+async processAndSendImages(userId, message, source = 'unknown', channelAccessToken) {
     if (!this.productImageSender || !message) {
         this.logger.warn('⚠️ Cannot process images', {
             hasProductImageSender: !!this.productImageSender,
@@ -948,12 +973,12 @@ async processAndSendImages(userId, message, source = 'unknown') {
         this.logger.info('⏱️ Waiting for main message to be sent before processing images');
         await new Promise(resolve => setTimeout(resolve, 3000)); // เพิ่มจาก 1500 เป็น 3000ms
         
-        const imageResult = await this.productImageSender.processOutgoingMessage(userId, message);
+        const imageResult = await this.productImageSender.processOutgoingMessage(userId, message, channelAccessToken);
 
         // Process keyword images
         let keywordResult = { processed: false, imagesSent: 0 };
         if (this.keywordImageSender) {
-            keywordResult = await this.keywordImageSender.processOutgoingMessage(userId, message);
+            keywordResult = await this.keywordImageSender.processOutgoingMessage(userId, message, channelAccessToken);
         }
 
         this.logger.info('📊 Image processing result', {
@@ -1042,7 +1067,7 @@ async processAndSendImages(userId, message, source = 'unknown') {
 }
 
 // *** Process Outgoing Message with Delay ***
-async processOutgoingMessageWithDelay(userId, message, messageId, fromAdmin = false, source = 'webSocketManager') {
+async processOutgoingMessageWithDelay(userId, message, messageId, fromAdmin = false, source = 'webSocketManager', channelAccessToken) {
     try {
         this.logger.info('🔄 Processing outgoing message with delay', {
             userId: userId ? userId.substring(0, 10) + '...' : 'unknown',
@@ -1052,10 +1077,10 @@ async processOutgoingMessageWithDelay(userId, message, messageId, fromAdmin = fa
         });
 
         // ส่งข้อความหลักผ่าน pushMessage
-        await this.pushMessage(userId, message, messageId, fromAdmin);
+        await this.pushMessage(userId, message, messageId, fromAdmin, channelAccessToken);
 
         // รอสักครู่แล้วประมวลผลรูปภาพและ keywords
-        await this.processAndSendImages(userId, message, source);
+        await this.processAndSendImages(userId, message, source, channelAccessToken);
 
         this.logger.info('✅ Message and images processed successfully', {
             userId: userId ? userId.substring(0, 10) + '...' : 'unknown',
@@ -1075,7 +1100,7 @@ async processOutgoingMessageWithDelay(userId, message, messageId, fromAdmin = fa
 
  // *** Direct AI Response Sending ***
 // *** Direct AI Response Sending ***
-async sendAIResponseDirectly(userId, responseText, response, replyToken) {
+async sendAIResponseDirectly(userId, responseText, response, replyToken, channelAccessToken) {
     try {
         let cleanedResponse;
         try {
@@ -1128,14 +1153,14 @@ async sendAIResponseDirectly(userId, responseText, response, replyToken) {
 
         // *** ส่งข้อความหลักก่อน - ใช้ replyMessage แทน pushMessage ***
         if (replyToken && replyToken.trim() !== '') {
-            await this.replyMessage(replyToken, cleanedResponse);
+            await this.replyMessage(replyToken, cleanedResponse, channelAccessToken);
             this.logger.info('✅ Main AI response sent via replyMessage', {
                 userId: userId ? userId.substring(0, 10) + '...' : 'unknown',
                 messageLength: cleanedResponse.length
             });
         } else {
             // Fallback ถ้าไม่มี replyToken
-            await this.pushMessage(userId, cleanedResponse, modelMessage.messageId, false);
+            await this.pushMessage(userId, cleanedResponse, modelMessage.messageId, false, channelAccessToken);
             this.logger.info('✅ Main AI response sent via pushMessage (fallback)', {
                 userId: userId ? userId.substring(0, 10) + '...' : 'unknown',
                 messageLength: cleanedResponse.length
@@ -1161,7 +1186,7 @@ async sendAIResponseDirectly(userId, responseText, response, replyToken) {
 
         // *** รอแล้วประมวลผลรูปและ keywords ***
         try {
-            await this.processAndSendImages(userId, cleanedResponse, 'sendAIResponseDirectly');
+            await this.processAndSendImages(userId, cleanedResponse, 'sendAIResponseDirectly', channelAccessToken);
         } catch (processingError) {
             this.logger.error('Error processing images and keywords in response:', {
                 error: processingError.message,
@@ -1179,7 +1204,7 @@ async sendAIResponseDirectly(userId, responseText, response, replyToken) {
     }
 }
  // *** Loading Animation ***
- async sendLoadingAnimation(userId, loadingSeconds = 60) {
+ async sendLoadingAnimation(userId, loadingSeconds = 60, channelAccessToken) {
      try {
          const lineLoadingUrl = 'https://api.line.me/v2/bot/chat/loading/start';
          const body = {
@@ -1187,7 +1212,7 @@ async sendAIResponseDirectly(userId, responseText, response, replyToken) {
              loadingSeconds: loadingSeconds
          };
          
-         await this.makeRequest('post', lineLoadingUrl, body);
+         await this.makeRequest('post', lineLoadingUrl, body, channelAccessToken);
          
          this.logger.info('Loading animation started for user:', {
              userId: userId ? userId.substring(0, 10) + '...' : 'unknown',
@@ -1212,7 +1237,7 @@ async sendAIResponseDirectly(userId, responseText, response, replyToken) {
 
  // *** Push Message (Admin Messages) ***
 
-async pushMessage(userId, text, messageId, fromAdmin = true) {
+async pushMessage(userId, text, messageId, fromAdmin = true, channelAccessToken) {
     try {
         if (!messageId) {
             messageId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -1253,7 +1278,7 @@ async pushMessage(userId, text, messageId, fromAdmin = true) {
                     }))
                 },
                 {
-                    headers: this.getHeaders()
+                    headers: this.getHeaders(channelAccessToken)
                 }
             );
 
@@ -1312,7 +1337,7 @@ async pushMessage(userId, text, messageId, fromAdmin = true) {
 }
  
  // *** Reply Message ***
- async replyMessage(replyToken, text, retryCount = 0) {
+ async replyMessage(replyToken, text, channelAccessToken, retryCount = 0) {
      if (!replyToken || replyToken.trim() === '') {
          this.logger.warn('Invalid replyToken, skipping message reply');
          return;
@@ -1342,7 +1367,7 @@ async pushMessage(userId, text, messageId, fromAdmin = true) {
                  }))
              };
 
-             await this.makeRequest('post', 'https://api.line.me/v2/bot/message/reply', body);
+             await this.makeRequest('post', 'https://api.line.me/v2/bot/message/reply', body, channelAccessToken);
              
              this.logger.info('Reply message sent successfully', {
                  replyToken: replyToken.substring(0, 10) + '...',
@@ -1363,7 +1388,7 @@ async pushMessage(userId, text, messageId, fromAdmin = true) {
                  error: error.message
              });
              await new Promise(resolve => setTimeout(resolve, retryDelay));
-             return this.replyMessage(replyToken, text, retryCount + 1);
+             return this.replyMessage(replyToken, text, channelAccessToken, retryCount + 1);
          }
          this.logger.error('Error sending reply after all retries:', {
              error: error.message,
@@ -1374,12 +1399,12 @@ async pushMessage(userId, text, messageId, fromAdmin = true) {
  }
 
  // *** HTTP Request Helper ***
- async makeRequest(method, url, data = null, retryCount = 0) {
+ async makeRequest(method, url, data = null, channelAccessToken, retryCount = 0) {
      try {
          const response = await axios({
              method,
              url,
-             headers: this.getHeaders(),
+             headers: this.getHeaders(channelAccessToken),
              data,
              timeout: 30000
          });
@@ -1401,7 +1426,7 @@ async pushMessage(userId, text, messageId, fromAdmin = true) {
                  error: error.message
              });
              await new Promise(resolve => setTimeout(resolve, this.retryDelay));
-             return this.makeRequest(method, url, data, retryCount + 1);
+             return this.makeRequest(method, url, data, channelAccessToken, retryCount + 1);
          }
 
          throw error;
@@ -1409,10 +1434,15 @@ async pushMessage(userId, text, messageId, fromAdmin = true) {
  }
 
  // *** Request Headers ***
- getHeaders() {
+ getHeaders(token) {
+     if (!token) {
+         this.logger.error('getHeaders called without a token');
+         // Throw an error to prevent unauthenticated requests
+         throw new Error('Channel Access Token is required for API calls');
+     }
      return {
          'Content-Type': 'application/json',
-         'Authorization': `Bearer ${this.lineToken}`,
+         'Authorization': `Bearer ${token}`,
          'User-Agent': 'LineBot/1.0'
      };
  }
@@ -1547,7 +1577,7 @@ async pushMessage(userId, text, messageId, fromAdmin = true) {
  }
 
  // *** Rich Message Support ***
- async sendFlexMessage(userId, flexContent, altText = 'Flex Message') {
+ async sendFlexMessage(userId, flexContent, altText = 'Flex Message', channelAccessToken) {
      try {
          if (!userId || !flexContent) {
              throw new Error('userId and flexContent are required');
@@ -1564,7 +1594,7 @@ async pushMessage(userId, text, messageId, fromAdmin = true) {
                  }]
              },
              {
-                 headers: this.getHeaders()
+                 headers: this.getHeaders(channelAccessToken)
              }
          );
 
@@ -1594,7 +1624,7 @@ async pushMessage(userId, text, messageId, fromAdmin = true) {
      }
  }
 
- async sendImageMessage(userId, originalContentUrl, previewImageUrl) {
+ async sendImageMessage(userId, originalContentUrl, previewImageUrl, channelAccessToken) {
      try {
          if (!userId || !originalContentUrl || !previewImageUrl) {
              throw new Error('userId, originalContentUrl, and previewImageUrl are required');
@@ -1611,7 +1641,7 @@ async pushMessage(userId, text, messageId, fromAdmin = true) {
                  }]
              },
              {
-                 headers: this.getHeaders()
+                 headers: this.getHeaders(channelAccessToken)
              }
          );
 

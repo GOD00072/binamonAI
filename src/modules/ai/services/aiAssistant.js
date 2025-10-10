@@ -187,57 +187,6 @@ class AIAssistant {
     }
 
     /**
-     * Load system prompt from Context Window config
-     * @returns {Promise<Object>} Context window configuration
-     */
-    async loadContextWindowConfig() {
-        try {
-            let config = await prisma.contextWindow.findUnique({
-                where: { key: 'default' }
-            });
-
-            // Create default if not exists
-            if (!config) {
-                config = await prisma.contextWindow.create({
-                    data: {
-                        key: 'default',
-                        system_prompt: 'คุณคือผู้ช่วยที่ชาญฉลาดในการให้ข้อมูลเกี่ยวกับสินค้า ใช้ข้อมูลจากฐานความรู้และสินค้าเพื่อตอบคำถามอย่างถูกต้องและเป็นประโยชน์',
-                        use_product_rag: true,
-                        use_knowledge_rag: true,
-                        max_context_messages: 10,
-                        include_user_history: true,
-                        temperature: 0.7,
-                        model_name: 'gemini-2.5-pro',
-                        max_tokens: 2000
-                    }
-                });
-            }
-
-            this.logger.info('Context window config loaded from SQL', {
-                useProductRAG: config.use_product_rag,
-                useKnowledgeRAG: config.use_knowledge_rag,
-                maxContextMessages: config.max_context_messages,
-                modelName: config.model_name
-            });
-
-            return config;
-        } catch (error) {
-            this.logger.error('Error loading context window config:', error);
-            // Return default config
-            return {
-                system_prompt: 'คุณคือผู้ช่วยที่ชาญฉลาดในการให้ข้อมูลเกี่ยวกับสินค้า',
-                use_product_rag: true,
-                use_knowledge_rag: true,
-                max_context_messages: 10,
-                include_user_history: true,
-                temperature: 0.7,
-                model_name: 'gemini-2.5-pro',
-                max_tokens: 2000
-            };
-        }
-    }
-
-    /**
      * Load Vector DB configuration from SQL with caching
      */
     async loadVectorDBConfig(forceRefresh = false) {
@@ -464,26 +413,26 @@ async processUserLanguage(userId, userText) {
         try {
             this.logger.info('Starting AI Assistant initialization...');
 
-            // Validate API key
-            if (!process.env.GEMINI_API_KEY) {
-                throw new Error('GEMINI_API_KEY environment variable is not set');
-            }
+            // Initialize Google AI if a global API key is provided
+            if (process.env.GEMINI_API_KEY) {
+                this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+                this.logger.info('Google AI instance created successfully with global API key');
 
-            // Initialize Google AI
-            this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-            this.logger.info('Google AI instance created successfully');
-
-            // Test model connection (skip if in development or no API key)
-            if (process.env.GEMINI_API_KEY && process.env.NODE_ENV !== 'development') {
-                try {
-                    await this.testModelConnection();
-                } catch (error) {
-                    this.logger.warn('Model connection test failed, but continuing initialization:', {
-                        error: error.message
-                    });
+                // Test model connection (skip if in development)
+                if (process.env.NODE_ENV !== 'development') {
+                    try {
+                        await this.testModelConnection();
+                    } catch (error) {
+                        this.logger.warn('Global model connection test failed, but continuing initialization:', {
+                            error: error.message
+                        });
+                    }
+                } else {
+                    this.logger.info('Skipping global model connection test (development mode)');
                 }
             } else {
-                this.logger.info('Skipping model connection test (development mode or no API key)');
+                this.logger.warn('GEMINI_API_KEY environment variable is not set. Relying on personality-specific API keys.');
+                this.genAI = null; // Explicitly set to null if no global key
             }
             
             // Initialize UnifiedContextFormatter if knowledge RAG is available
@@ -555,7 +504,7 @@ async processUserLanguage(userId, userText) {
     /**
      * Main method for generating AI responses with comprehensive logging and duplicate prevention
      */
-    async generateResponse(query, products = [], userId = null, options = {}) {
+    async generateResponse(query, products = [], userId = null, options = {}, contextWindow = null) {
         const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
         const startTime = Date.now();
         
@@ -685,7 +634,7 @@ async processUserLanguage(userId, userText) {
             });
 
             // *** Enhanced context gathering ***
-            const contextData = await this.gatherEnhancedContext(query, products, userId, requestId);
+            const contextData = await this.gatherEnhancedContext(query, products, userId, requestId, contextWindow);
             
             this.logger.info('Context data prepared for AI processing', {
                 requestId,
@@ -855,7 +804,7 @@ async processUserLanguage(userId, userText) {
     /**
      * Gather enhanced context with comprehensive logging
      */
-    async gatherEnhancedContext(query, products = [], userId = null, requestId = null) {
+    async gatherEnhancedContext(query, products = [], userId = null, requestId = null, contextWindow = null) {
         const context = {
             query,
             products: products || [],
@@ -879,15 +828,24 @@ async processUserLanguage(userId, userText) {
                 }
             });
 
-            // *** Load context window config first ***
-            const contextConfig = await this.loadContextWindowConfig();
+            // *** Use provided context window or fallback to default ***
+            const contextConfig = contextWindow || {
+                system_prompt: 'คุณคือผู้ช่วยที่ชาญฉลาดในการให้ข้อมูลเกี่ยวกับสินค้า',
+                use_product_rag: true,
+                use_knowledge_rag: true,
+                max_context_messages: 10,
+                include_user_history: true,
+                temperature: 0.7,
+                model_name: 'gemini-2.5-pro',
+                max_tokens: 2000
+            };
 
-            this.logger.info('Context window config loaded for enhanced context', {
+            this.logger.info('Using context window config', {
                 requestId,
+                source: contextWindow ? 'Provided' : 'Default Fallback',
                 useProductRAG: contextConfig.use_product_rag,
                 useKnowledgeRAG: contextConfig.use_knowledge_rag,
-                includeUserHistory: contextConfig.include_user_history,
-                maxContextMessages: contextConfig.max_context_messages
+                modelName: contextConfig.model_name
             });
 
             // *** Get user's chat history from SQL ***
@@ -1133,6 +1091,7 @@ async processUserLanguage(userId, userText) {
                 }
             });
 
+            context.contextConfig = contextConfig; // Add contextConfig to the returned context
             return context;
 
         } catch (error) {
@@ -1331,11 +1290,12 @@ async generateEnhancedResponse(query, contextData, userId = null, requestId = nu
             }
         });
 
+        const geminiApiKey = contextData.contextConfig?.text_api_key || process.env.GEMINI_API_KEY;
         const result = await this.geminiAPIService.callGeminiAPI(
             contextualPrompt,
             chatHistory,
             this.configManager.generationConfig,
-            process.env.GEMINI_API_KEY
+            geminiApiKey
         );
 
         const apiCallTime = Date.now() - apiCallStart;

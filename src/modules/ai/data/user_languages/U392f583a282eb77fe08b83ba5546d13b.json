@@ -1,0 +1,28 @@
+{
+  "userId": "U392f583a282eb77fe08b83ba5546d13b",
+  "language": "TH",
+  "isLocked": true,
+  "firstDetected": "TH",
+  "conversationStarted": true,
+  "lastUpdateTime": 1759878080730,
+  "detectionHistory": [
+    {
+      "language": "TH",
+      "timestamp": 1759877839929,
+      "userText": "ดีค้าบ",
+      "method": "auto_detected",
+      "textLength": 6,
+      "wordCount": 1
+    },
+    {
+      "language": "TH",
+      "timestamp": 1759878080730,
+      "userText": "ดีค้าบ",
+      "method": "auto_detected",
+      "textLength": 6,
+      "wordCount": 1
+    }
+  ],
+  "createdAt": 1759877839708,
+  "version": "2.0"
+}
