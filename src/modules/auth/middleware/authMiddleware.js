@@ -1,9 +1,9 @@
-    'use strict';
+'use strict';
 
-    const DISABLE_AUTH = false; 
+const DISABLE_AUTH = false;
 
-    // แก้ไขเพื่อตรวจสอบ token จาก cookie หรือ headers
-    const authMiddleware = (authManager) => {
+// แก้ไขเพื่อตรวจสอบ token จาก cookie หรือ headers
+const authMiddleware = (authManager) => {
     return (req, res, next) => {
         if (DISABLE_AUTH) {
             return next();
@@ -91,7 +91,7 @@
             
             if (!token) {
                 return res.status(401).json({ 
-                    error: 'ไม่มีสิทธิเข้าถึง',
+                    error: 'Authentication required',
                     code: 'NO_TOKEN'
                 });
             }
@@ -101,7 +101,7 @@
             
             if (!decoded) {
                 return res.status(401).json({ 
-                    error: 'ไม่มีสิทธิเข้าถึง',
+                    error: 'Invalid token',
                     code: 'INVALID_TOKEN'
                 });
             }
@@ -110,7 +110,7 @@
             const now = Math.floor(Date.now() / 1000);
             if (decoded.exp && decoded.exp < now) {
                 return res.status(401).json({ 
-                    error: 'ไม่มีสิทธิเข้าถึง',
+                    error: 'Token expired',
                     code: 'TOKEN_EXPIRED'
                 });
             }
@@ -123,6 +123,6 @@
         // For all other requests, pass through
         next();
     };
-    };
+};
 
-    module.exports = authMiddleware;
+module.exports = authMiddleware;
