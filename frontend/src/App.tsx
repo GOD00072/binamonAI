@@ -20,6 +20,8 @@ import KeywordManagementPage from './pages/KeywordManagementPage';
 import ProductsPage from './pages/ProductsPage';
 import DashboardPage from './pages/DashboardPage';
 import ImageConfigPage from './pages/ImageConfigPage';
+import UserManagementPage from './pages/UserManagementPage';
+import RoleManagementPage from './pages/RoleManagementPage';
 
 import LineOaConfigPage from './pages/LineOaConfigPage';
 
@@ -397,6 +399,8 @@ const App: React.FC = () => {
                     <Route path="/keywords" element={withLayout(KeywordManagementPage, 'keywords')} />
                     <Route path="/products" element={withLayout(ProductsPage, 'products')} />
                     <Route path="/image-config" element={withLayout(ImageConfigPage, 'image-config')} />
+                    <Route path="/user-management" element={withLayout(UserManagementPage, 'user-management')} />
+                    <Route path="/role-management" element={withLayout(RoleManagementPage, 'role-management')} />
 
                     <Route path="/line-oa-config" element={withLayout(LineOaConfigPage, 'line-oa-config')} />
                     <Route path="/ai-personalities" element={withLayout(ContextWindowPage, 'ai-personalities')} />
