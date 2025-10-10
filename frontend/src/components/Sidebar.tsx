@@ -12,6 +12,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
   const menuItems = [
     { path: '/', icon: 'fas fa-gauge-high', label: 'แดชบอร์ด' },
+    { path: '/user-management', icon: 'fas fa-users-cog', label: 'จัดการผู้ใช้' },
+    { path: '/role-management', icon: 'fas fa-user-shield', label: 'จัดการสิทธิ์' },
     { path: '/keywords', icon: 'fas fa-tags', label: 'จัดการ Keywords' },
     { path: '/chat', icon: 'fas fa-comments', label: 'แชท' },
     { path: '/chat-test', icon: 'fas fa-flask-vial', label: 'Chat Test' },
