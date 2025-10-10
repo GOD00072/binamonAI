@@ -9,11 +9,4 @@ module.exports = {
       ],
     },
   },
-  jest: {
-    configure: {
-      transformIgnorePatterns: [
-        '/node_modules/(?!react-markdown|remark-gfm|react-syntax-highlighter|recharts)/',
-      ],
-    },
-  },
-};
+}

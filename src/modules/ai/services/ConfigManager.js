@@ -2,7 +2,6 @@
 
 const fs = require('fs').promises;
 const path = require('path');
-const cld = require('cld'); // เพิ่ม CLD สำหรับตรวจจับภาษา
 const prisma = require('../../../../lib/prisma');
 
 class ConfigManager {
@@ -45,7 +44,7 @@ class ConfigManager {
             longPromptThreshold: 12120000
         };
 
-        // Enhanced Language detection configuration with CLD
+        // Enhanced Language detection configuration
         this.languageDetectionConfig = {
             // Thai detection settings - ตรวจจับทุกคำขั้นต่ำ 1 คำ
             thai: {
@@ -69,28 +68,13 @@ class ConfigManager {
             // Other languages
             otherLanguages: {
                 minTextLength: 20,
-                confidenceThreshold: 0.7,
-                cldRequiredConfidence: 0.8
+                confidenceThreshold: 0.7
             },
             // General settings
             cacheTimeout: 5000,
             lockAfterFirstDetection: true,
             preferThaiLanguage: true,
-            fallbackToThai: true,
-            
-            // CLD specific settings
-            useCLD: true,
-            cldMinLength: 10,
-            cldConfidenceThreshold: 0.6,
-            cldLanguageMap: {
-                'THAI': 'TH',
-                'ENGLISH': 'EN', 
-                'CHINESE': 'CN',
-                'CHINESE_SIMPLIFIED': 'CN',
-                'CHINESE_TRADITIONAL': 'CN',
-                'JAPANESE': 'JP',
-                'KOREAN': 'KR'
-            }
+            fallbackToThai: true
         };
 
         // Unified Formatter Configuration
@@ -188,7 +172,7 @@ class ConfigManager {
                     greeting: 'สวัสดีค่ะ เจ้าหงส์ยินดีให้คำปรึกษาเกี่ยวกับบรรจุภัณฑ์นะคะ 🙂',
                     closing: 'หากมีข้อสงสัยเพิ่มเติม สามารถสอบถามได้เลยนะคะ 😊',
                     guidelines: [
-                        'ตอบคำถามตรงประเด็น เข้าใจง่าย',
+                        'ตอบคำถามตรงประเดเด็น เข้าใจง่าย',
                         'ให้ข้อมูลที่เป็นประโยชน์และครบถ้วน',
                         'แนะนำสินค้าที่เหมาะสมตามความต้องการของลูกค้า',
                         'แจ้งราคาเป็นช่วงตามปริมาณการสั่งซื้อ และช่วงราคาสินค้าสั่งผลิต',
@@ -424,43 +408,6 @@ class ConfigManager {
     }
 
     /**
-     * Enhanced language detection using CLD and custom rules
-     */
-    async detectLanguageWithCLD(text) {
-        try {
-            if (!text || text.length < this.languageDetectionConfig.cldMinLength) {
-                return null;
-            }
-
-            const result = await cld.detect(text);
-            
-            this.logger.debug('CLD detection result', {
-                language: result.language,
-                confidence: result.confidence,
-                textLength: text.length,
-                isReliable: result.isReliable
-            });
-
-            // Map CLD language codes to our system
-            const detectedLang = this.languageDetectionConfig.cldLanguageMap[result.language];
-            
-            if (detectedLang && result.confidence >= this.languageDetectionConfig.cldConfidenceThreshold) {
-                return {
-                    language: detectedLang,
-                    confidence: result.confidence,
-                    isReliable: result.isReliable,
-                    method: 'CLD'
-                };
-            }
-
-            return null;
-        } catch (error) {
-            this.logger.debug('CLD detection failed:', error.message);
-            return null;
-        }
-    }
-
-    /**
      * Enhanced language detection with new strict rules
      */
     async detectLanguage(text, userId = null) {
@@ -617,31 +564,6 @@ class ConfigManager {
                     englishVsThaiRatio: englishVsThaiRatio.toFixed(3),
                     passedTests: { passesConfidenceTest, passesThaiRatioTest, passesWordRatioTest }
                 });
-            }
-        }
-        // 3. Try CLD detection for other languages
-        else if (this.languageDetectionConfig.useCLD && 
-                textLength >= this.languageDetectionConfig.cldMinLength) {
-            try {
-                const cldResult = await this.detectLanguageWithCLD(cleanText);
-                if (cldResult && 
-                    cldResult.confidence >= this.languageDetectionConfig.otherLanguages.cldRequiredConfidence) {
-                    
-                    // For non-Thai/English languages, use CLD result with high confidence
-                    if (cldResult.language !== 'TH' && cldResult.language !== 'EN') {
-                        detectedLanguage = cldResult.language;
-                        confidence = cldResult.confidence;
-                        detectionMethod = 'cld_other_language';
-                        
-                        this.logger.debug('CLD detected other language', {
-                            language: cldResult.language,
-                            confidence: cldResult.confidence,
-                            method: detectionMethod
-                        });
-                    }
-                }
-            } catch (cldError) {
-                this.logger.debug('CLD detection error:', cldError.message);
             }
         }
 

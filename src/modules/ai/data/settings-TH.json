@@ -63,25 +63,12 @@
     },
     "otherLanguages": {
       "minTextLength": 20,
-      "confidenceThreshold": 0.7,
-      "cldRequiredConfidence": 0.8
+      "confidenceThreshold": 0.7
     },
     "cacheTimeout": 5000,
     "lockAfterFirstDetection": true,
     "preferThaiLanguage": true,
-    "fallbackToThai": true,
-    "useCLD": true,
-    "cldMinLength": 10,
-    "cldConfidenceThreshold": 0.6,
-    "cldLanguageMap": {
-      "THAI": "TH",
-      "ENGLISH": "EN",
-      "CHINESE": "CN",
-      "CHINESE_SIMPLIFIED": "CN",
-      "CHINESE_TRADITIONAL": "CN",
-      "JAPANESE": "JP",
-      "KOREAN": "KR"
-    }
+    "fallbackToThai": true
   },
   "unifiedFormatterConfig": {
     "enabled": true,
