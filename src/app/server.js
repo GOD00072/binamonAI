@@ -140,9 +140,10 @@ const knowledgeRAG = new KnowledgeRAG(logger);
 const aiAssistant = new AIAssistant(logger, chatHistory, productManager, productionHandler, knowledgeRAG);
 aiAssistant.setKnowledgeFormatter(knowledgeFormatter);
 
-// Initialize authentication system
-const { router: authRouter, authManager } = createAuthRoutes(logger);
-const roleRoutes = createRoleRoutes(authManager);
+// Initialize authentication system (initialized after WebSocketManager is created)
+let authRouter;
+let authManager;
+let roleRoutes;
 
 // Initialize LINE Message Handler
 const lineHandler = new LineMessageHandler(
@@ -173,6 +174,10 @@ lineHandler.setKeywordDetector(keywordDetector);
 keywordDetector.setLineHandler(lineHandler);
 webSocketManager.lineHandler = lineHandler;
 logger.info('✅ Service connections established');
+
+// Now that webSocketManager is available, initialize auth and role routes
+({ router: authRouter, authManager } = createAuthRoutes(logger, webSocketManager));
+roleRoutes = createRoleRoutes(authManager, webSocketManager);
 
 app.use(cors());
 app.use('/webhook/line/:oaId', express.raw({ type: 'application/json' }));
@@ -1866,6 +1871,10 @@ process.on('uncaughtException', (error) => {
 });
 
 app.use((req, res, next) => {
+    // Allow health endpoint to be served and not redirected
+    if (req.path === '/health') {
+        return next();
+    }
     if (req.path.startsWith('/api/') || req.path === '/webhook') {
         return res.status(404).json({
             success: false,

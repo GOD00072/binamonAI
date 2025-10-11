@@ -4,7 +4,7 @@ const express = require('express');
 const prisma = require('../../../../lib/prisma');
 const router = express.Router();
 
-const createRoleRoutes = (authManager) => {
+const createRoleRoutes = (authManager, webSocketManager) => {
     const checkRolesManagePermission = authManager.authorizeRequest('roles:manage');
 
     // Get all roles
@@ -66,28 +66,32 @@ const createRoleRoutes = (authManager) => {
         try {
             const { id } = req.params;
             const { permissionIds } = req.body;
+            console.log('Received req.body:', req.body);
+            console.log('Received permissionIds:', permissionIds);
 
-            if (!Array.isArray(permissionIds)) {
-                return res.status(400).json({ error: 'permissionIds must be an array' });
+            const result = await authManager.assignPermissionsToRole(id, permissionIds);
+
+            if (!result.success) {
+                return res.status(400).json({ error: result.message });
             }
-
-            await prisma.rolePermission.deleteMany({ where: { roleId: id } });
-
-            const rolePermissions = permissionIds.map(permissionId => ({
-                roleId: id,
-                permissionId,
-            }));
-
-            await prisma.rolePermission.createMany({
-                data: rolePermissions,
-            });
-
-            const updatedRole = await prisma.role.findUnique({
-                where: { id },
-                include: { permissions: { include: { permission: true } } },
-            });
-
-            res.json(updatedRole);
+            // Broadcast role permission update to all clients
+            try {
+                const role = result.role;
+                const roleName = role.name;
+                const perms = role.permissions.map(p => p.permission.name);
+                if (webSocketManager && webSocketManager.io) {
+                    webSocketManager.io.emit('auth_role_permissions_updated', {
+                        roleId: id,
+                        roleName,
+                        permissions: perms,
+                        timestamp: Date.now()
+                    });
+                }
+            } catch (e) {
+                // Non-fatal: logging only
+                console.error('Failed to emit auth_role_permissions_updated:', e.message);
+            }
+            res.json(result.role);
         } catch (error) {
             res.status(500).json({ error: 'Failed to assign permissions' });
         }

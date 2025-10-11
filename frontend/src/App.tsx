@@ -22,6 +22,7 @@ import DashboardPage from './pages/DashboardPage';
 import ImageConfigPage from './pages/ImageConfigPage';
 
 import LineOaConfigPage from './pages/LineOaConfigPage';
+import UserManagementPage from './pages/UserManagementPage';
 
 // Services
 import { socketService } from './services/socket';
@@ -32,12 +33,14 @@ import { isDevelopment } from './utils/env';
 
 // Styles
 import './App.css';
+import './styles/theme.css';
 
 interface User {
   id: string;
   username: string;
   employeeId?: string;
   role: string;
+  permissions: string[]; // Add permissions array
   createdAt?: number;
   updatedAt?: number;
 }
@@ -93,6 +96,12 @@ const App: React.FC = () => {
   const initializeAuthenticatedApp = useCallback(async () => {
     try {
       console.log('🚀 Initializing authenticated app...');
+      // Ensure global WebSocket connection for realtime updates
+      socketService.connect();
+      // Authenticate socket with current token for targeted events
+      const token = localStorage.getItem('auth_token') || '';
+      const u = state.user as any;
+      socketService.authenticate(token, { userId: u?.id, username: u?.username, role: u?.role });
 
     } catch (apiError: any) {
       console.error('❌ API connection failed:', apiError.message);
@@ -145,12 +154,14 @@ const App: React.FC = () => {
 
       const response = await authApi.getProfile();
       
-      if (response.success) {
-        const userData = JSON.parse(savedUser);
+      if (response.success && response.data) {
+        // Trust server profile (derived from token) over local cache
+        const serverUser = response.data;
+        localStorage.setItem('user_data', JSON.stringify(serverUser));
         setState(prev => ({
           ...prev,
           isAuthenticated: true,
-          user: userData,
+          user: serverUser,
           authChecked: true
         }));
         return true;
@@ -185,6 +196,21 @@ const App: React.FC = () => {
     }
   }, []);
 
+  const refreshAuthFromServer = useCallback(async () => {
+    try {
+      const response = await authApi.refreshToken();
+      if (response.success && response.data) {
+        const { token, user } = response.data;
+        localStorage.setItem('auth_token', token);
+        localStorage.setItem('user_data', JSON.stringify(user));
+        setState(prev => ({ ...prev, user, isAuthenticated: true }));
+        console.log('🔄 Auth refreshed from server (role/permissions updated)');
+      }
+    } catch (e: any) {
+      console.error('Failed to refresh auth token/profile:', e.message || e);
+    }
+  }, []);
+
   useEffect(() => {
     const initializeApp = async () => {
       try {
@@ -212,6 +238,44 @@ const App: React.FC = () => {
       socketService.disconnect();
     };
   }, [checkAuthentication, initializeAuthenticatedApp]);
+
+  // Listen for backend events to update current user's role/permissions without relogin
+  useEffect(() => {
+    if (!state.isAuthenticated || !state.user) return;
+
+    // Ensure socket is authenticated with latest token/user
+    const token = localStorage.getItem('auth_token') || '';
+    const u = state.user as any;
+    socketService.authenticate(token, { userId: u?.id, username: u?.username, role: u?.role });
+
+    const handleAuthUserUpdated = (data: any) => {
+      if (data?.userId && state.user && data.userId === (state.user as any).id) {
+        refreshAuthFromServer();
+      }
+    };
+    const handleAuthUserRoleUpdated = (data: any) => {
+      if (data?.userId && state.user && data.userId === (state.user as any).id) {
+        refreshAuthFromServer();
+      }
+    };
+    const handleRolePermissionsUpdated = (data: any) => {
+      if (!data) return;
+      const currentRoleName = (state.user as any).role;
+      if (data.roleName && currentRoleName && data.roleName === currentRoleName) {
+        refreshAuthFromServer();
+      }
+    };
+
+    socketService.on('auth_user_updated', handleAuthUserUpdated);
+    socketService.on('auth_user_role_updated', handleAuthUserRoleUpdated);
+    socketService.on('auth_role_permissions_updated', handleRolePermissionsUpdated);
+
+    return () => {
+      socketService.off('auth_user_updated', handleAuthUserUpdated);
+      socketService.off('auth_user_role_updated', handleAuthUserRoleUpdated);
+      socketService.off('auth_role_permissions_updated', handleRolePermissionsUpdated);
+    };
+  }, [state.isAuthenticated, state.user, refreshAuthFromServer]);
 
   const handleLogin = async (token: string, user: User) => {
     try {
@@ -377,6 +441,7 @@ const App: React.FC = () => {
             <Sidebar 
               isOpen={sidebarOpen} 
               onClose={() => setSidebarOpen(false)} 
+              user={state.user} // Pass the user object to Sidebar
             />
             
             <main className={`main-content ${sidebarOpen ? 'shifted' : ''}`}>
@@ -400,6 +465,7 @@ const App: React.FC = () => {
 
                     <Route path="/line-oa-config" element={withLayout(LineOaConfigPage, 'line-oa-config')} />
                     <Route path="/ai-personalities" element={withLayout(ContextWindowPage, 'ai-personalities')} />
+                    <Route path="/user-management" element={withLayout(UserManagementPage, 'user-management')} />
 
                         <Route path="*" element={<Navigate to="/" replace />} />
                       </Routes>
