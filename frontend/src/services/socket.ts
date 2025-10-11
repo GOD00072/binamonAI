@@ -5,9 +5,14 @@ class SocketService {
   private url: string;
   private reconnectAttempts: number = 0;
   private maxReconnectAttempts: number = 5;
+  private pendingAuthPayload: any | null = null;
 
   constructor() {
-    this.url = process.env.REACT_APP_SOCKET_URL || 'localhost:3001';
+    const envUrl = process.env.REACT_APP_API_URL || process.env.REACT_APP_SOCKET_URL;
+    const defaultUrl = (typeof window !== 'undefined' && window.location && window.location.origin)
+      ? window.location.origin
+      : 'http://localhost:3001';
+    this.url = envUrl || defaultUrl;
   }
 
   connect(): void {
@@ -26,6 +31,10 @@ class SocketService {
       this.socket.on('connect', () => {
         console.log('✅ Socket connected:', this.socket?.id);
         this.reconnectAttempts = 0;
+        // If we have a pending auth payload, authenticate now
+        if (this.pendingAuthPayload) {
+          this.socket!.emit('authenticate', this.pendingAuthPayload);
+        }
       });
 
       this.socket.on('disconnect', (reason) => {
@@ -53,6 +62,19 @@ class SocketService {
       this.socket.on('reconnect_failed', () => {
         console.error('🔴 Socket reconnection failed');
       });
+    }
+  }
+
+  authenticate(token: string, meta?: { userId?: string; username?: string; role?: string }) {
+    const payload = {
+      token,
+      userId: meta?.userId,
+      username: meta?.username,
+      role: meta?.role,
+    };
+    this.pendingAuthPayload = payload;
+    if (this.socket && this.socket.connected) {
+      this.socket.emit('authenticate', payload);
     }
   }
 
