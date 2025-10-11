@@ -1,62 +1,84 @@
 import React from 'react';
 import { AuthUser } from '../models/auth';
-import { Button, Space, Tag } from 'antd';
+import { Button, Space, Tag, Table } from 'antd';
 import { EditOutlined, DeleteOutlined } from '@ant-design/icons';
 
 interface UserTableProps {
     users: AuthUser[];
     onEdit: (user: AuthUser) => void;
     onDelete: (user: AuthUser) => void;
+    hasPermission: (permission: string) => boolean;
 }
 
-const UserTable: React.FC<UserTableProps> = ({ users, onEdit, onDelete }) => {
+const UserTable: React.FC<UserTableProps> = ({ users, onEdit, onDelete, hasPermission }) => {
+    const columns = [
+        {
+            title: 'Username',
+            dataIndex: 'username',
+            key: 'username',
+            sorter: (a: AuthUser, b: AuthUser) => a.username.localeCompare(b.username),
+        },
+        {
+            title: 'Employee ID',
+            dataIndex: 'employeeId',
+            key: 'employeeId',
+            sorter: (a: AuthUser, b: AuthUser) => a.employeeId.localeCompare(b.employeeId),
+        },
+        {
+            title: 'Role',
+            dataIndex: ['role', 'name'],
+            key: 'role',
+            render: (roleName: string) => <Tag>{roleName}</Tag>,
+            sorter: (a: AuthUser, b: AuthUser) => a.role.name.localeCompare(b.role.name),
+        },
+        {
+            title: 'Status',
+            dataIndex: 'isActive',
+            key: 'isActive',
+            render: (isActive: boolean) => (
+                <Tag color={isActive ? 'success' : 'error'}>
+                    {isActive ? 'Active' : 'Inactive'}
+                </Tag>
+            ),
+            sorter: (a: AuthUser, b: AuthUser) => (a.isActive === b.isActive ? 0 : a.isActive ? -1 : 1),
+        },
+        {
+            title: 'Actions',
+            key: 'actions',
+            render: (text: any, record: AuthUser) => (
+                <Space>
+                    <Button
+                        type="primary"
+                        icon={<EditOutlined />}
+                        onClick={() => onEdit(record)}
+                        disabled={!hasPermission('users:manage')}
+                    >
+                        Edit
+                    </Button>
+                    <Button
+                        type="primary"
+                        danger
+                        icon={<DeleteOutlined />}
+                        onClick={() => onDelete(record)}
+                        disabled={!hasPermission('users:manage')}
+                    >
+                        Delete
+                    </Button>
+                </Space>
+            ),
+        },
+    ];
+
     return (
-        <div className="overflow-x-auto bg-white rounded-lg shadow">
-            <table className="min-w-full">
-                <thead className="bg-gray-100">
-                    <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Username</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Employee ID</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                    </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                    {users.map(user => (
-                        <tr key={user.id}>
-                            <td className="px-6 py-4 whitespace-nowrap">{user.username}</td>
-                            <td className="px-6 py-4 whitespace-nowrap">{user.employeeId}</td>
-                            <td className="px-6 py-4 whitespace-nowrap">{user.role.name}</td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                                <Tag color={user.isActive ? 'success' : 'error'}>
-                                    {user.isActive ? 'Active' : 'Inactive'}
-                                </Tag>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-right">
-                                <Space>
-                                    <Button
-                                        type="primary"
-                                        icon={<EditOutlined />}
-                                        onClick={() => onEdit(user)}
-                                    >
-                                        Edit
-                                    </Button>
-                                    <Button
-                                        type="primary"
-                                        danger
-                                        icon={<DeleteOutlined />}
-                                        onClick={() => onDelete(user)}
-                                    >
-                                        Delete
-                                    </Button>
-                                </Space>
-                            </td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-        </div>
+        <Table
+            columns={columns}
+            dataSource={users}
+            rowKey="id"
+            pagination={{ pageSize: 10 }}
+            scroll={{ x: 'max-content' }}
+            size="small"
+            bordered
+        />
     );
 };
 
