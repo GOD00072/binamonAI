@@ -31,6 +31,21 @@ class AuthManager {
                 { name: 'admin:access', description: 'Full administrative access' },
                 { name: 'users:manage', description: 'Manage users' },
                 { name: 'roles:manage', description: 'Manage roles and permissions' },
+                { name: 'products:manage', description: 'Manage products (create, edit, delete)' },
+                { name: 'products:view', description: 'View products' },
+                { name: 'ai:interact', description: 'Interact with AI models' },
+                { name: 'messages:view', description: 'View chat messages' },
+                { name: 'users:view', description: 'View chat users' },
+                { name: 'chat:view', description: 'View chat history' },
+                { name: 'config:manage', description: 'Manage system configurations' },
+                { name: 'system:admin', description: 'Full system administration access' },
+                { name: 'knowledge:view', description: 'View knowledge base' },
+                { name: 'documents:manage', description: 'Manage documents' },
+                { name: 'media:view', description: 'View media files' },
+                { name: 'media:manage', description: 'Manage media files (upload, delete)' },
+                { name: 'keywords:manage', description: 'Manage keywords' },
+                { name: 'config:view', description: 'View system configurations' },
+                { name: 'system:view', description: 'View system status and logs' },
             ];
             for (const p of permissions) {
                 await prisma.permission.upsert({
@@ -62,7 +77,19 @@ class AuthManager {
             });
             this.logger.info('Assigned all permissions to "admin" role.');
 
-            // 4. Ensure default admin user exists
+            // 4. Ensure AuthUser has isActive column (backward compatibility) without raising prisma error logs
+            try {
+                const rows = await prisma.$queryRawUnsafe("SELECT 1 FROM pragma_table_info('AuthUser') WHERE name='isActive' LIMIT 1");
+                const hasColumn = Array.isArray(rows) && rows.length > 0;
+                if (!hasColumn) {
+                    this.logger.warn('Adding missing isActive column to AuthUser table');
+                    await prisma.$executeRawUnsafe('ALTER TABLE "AuthUser" ADD COLUMN "isActive" INTEGER NOT NULL DEFAULT 1');
+                }
+            } catch (e) {
+                this.logger.error('Failed to verify/add isActive column:', e);
+            }
+
+            // 5. Ensure default admin user exists
             const adminUser = await prisma.authUser.findFirst({ where: { role: { name: 'admin' } } });
             if (!adminUser) {
                 const passwordHash = await this.hashPassword('admin123');
@@ -72,6 +99,7 @@ class AuthManager {
                         password: passwordHash,
                         employeeId: 'ADMIN001',
                         roleId: adminRole.id,
+                        isActive: true,
                     },
                 });
                 this.logger.info('Created default admin user (admin/admin123).');
@@ -86,8 +114,12 @@ class AuthManager {
         if (!user) {
             return null;
         }
-        const { password, ...userData } = user;
-        return userData;
+        const { password, role, ...userData } = user;
+        return {
+            ...userData,
+            role: role.name, // Only send role name to frontend
+            permissions: role.permissions.map(p => p.permission.name),
+        };
     }
 
     async hashPassword(password) {
@@ -189,6 +221,18 @@ class AuthManager {
                     password: await this.hashPassword(userData.password),
                     employeeId: userData.employeeId,
                     roleId: roleId,
+                    isActive: typeof userData.isActive === 'boolean' ? userData.isActive : true,
+                },
+                include: {
+                    role: {
+                        include: {
+                            permissions: {
+                                include: {
+                                    permission: true,
+                                },
+                            },
+                        },
+                    },
                 },
             });
 
@@ -230,6 +274,7 @@ class AuthManager {
             if (userData.roleId) updateData.roleId = userData.roleId;
             if (userData.employeeId) updateData.employeeId = userData.employeeId;
             if (userData.password) updateData.password = await this.hashPassword(userData.password);
+            if (typeof userData.isActive === 'boolean') updateData.isActive = userData.isActive;
 
             if (Object.keys(updateData).length === 0) {
                 return { success: true, user: this.sanitizeUser(existingUser) };
@@ -238,6 +283,17 @@ class AuthManager {
             const updatedUser = await prisma.authUser.update({
                 where: { id },
                 data: updateData,
+                include: {
+                    role: {
+                        include: {
+                            permissions: {
+                                include: {
+                                    permission: true,
+                                },
+                            },
+                        },
+                    },
+                },
             });
 
             this.logger.info(`Updated user: ${updatedUser.username}`);
@@ -283,7 +339,17 @@ class AuthManager {
         try {
             const users = await prisma.authUser.findMany({
                 orderBy: { createdAt: 'asc' },
-                include: { role: true },
+                include: {
+                    role: {
+                        include: {
+                            permissions: {
+                                include: {
+                                    permission: true,
+                                },
+                            },
+                        },
+                    },
+                },
             });
             return users.map(user => this.sanitizeUser(user));
         } catch (error) {
@@ -322,6 +388,48 @@ class AuthManager {
 
         this.logger.info(`Password updated for user: ${user.username}`);
         return { success: true, message: 'Password changed successfully' };
+    }
+
+    async assignPermissionsToRole(roleId, permissionIds) {
+        try {
+            if (!Array.isArray(permissionIds) || !permissionIds.every(id => typeof id === 'string')) {
+                throw new Error('permissionIds must be an array of strings');
+            }
+
+            await prisma.rolePermission.deleteMany({
+                where: { roleId: roleId },
+            });
+
+            if (permissionIds.length > 0) {
+                await prisma.rolePermission.createMany({
+                    data: permissionIds.map(permissionId => ({
+                        roleId: roleId,
+                        permissionId: permissionId,
+                    })),
+                });
+            }
+
+            const updatedRole = await prisma.role.findUnique({
+                where: { id: roleId },
+                include: {
+                    permissions: {
+                        include: {
+                            permission: true,
+                        },
+                    },
+                },
+            });
+
+            if (!updatedRole) {
+                throw new Error('Role not found after updating permissions');
+            }
+
+            this.logger.info(`Permissions assigned to role ${updatedRole.name} (${roleId})`);
+            return { success: true, role: updatedRole };
+        } catch (error) {
+            this.logger.error(`Error assigning permissions to role ${roleId}:`, error);
+            return { success: false, message: error.message };
+        }
     }
 
     authorizeRequest(requiredPermission) {
@@ -365,7 +473,7 @@ class AuthManager {
     }
 }
 
-const createAuthRoutes = (logger) => {
+const createAuthRoutes = (logger, webSocketManager) => {
     const authManager = new AuthManager(logger);
 
     authManager.initialize().catch(error => {
@@ -430,6 +538,29 @@ const createAuthRoutes = (logger) => {
             if (!result.success) {
                 return res.status(400).json({ error: result.message });
             }
+            // Emit update events so frontends can refresh tokens/profile
+            try {
+                if (webSocketManager && webSocketManager.io) {
+                    webSocketManager.io.emit('auth_user_updated', {
+                        userId: result.user.id,
+                        username: result.user.username,
+                        role: result.user.role,
+                        permissions: result.user.permissions,
+                        timestamp: Date.now()
+                    });
+                    if (roleId) {
+                        webSocketManager.io.emit('auth_user_role_updated', {
+                            userId: result.user.id,
+                            username: result.user.username,
+                            role: result.user.role,
+                            permissions: result.user.permissions,
+                            timestamp: Date.now()
+                        });
+                    }
+                }
+            } catch (e) {
+                logger.error('Failed to emit user update events:', e);
+            }
             res.json(result);
         } catch (error) {
             logger.error('Update user error:', error);
@@ -474,6 +605,32 @@ const createAuthRoutes = (logger) => {
         } catch (error) {
             logger.error('Change password error:', error);
             res.status(500).json({ error: 'Failed to change password' });
+        }
+    });
+
+    // Refresh token using current DB role/permissions
+    router.post('/refresh', authManager.authorizeRequest(), async (req, res) => {
+        try {
+            const id = req.user.id;
+            const dbUser = await prisma.authUser.findUnique({
+                where: { id },
+                include: {
+                    role: {
+                        include: {
+                            permissions: { include: { permission: true } }
+                        }
+                    }
+                }
+            });
+            if (!dbUser) {
+                return res.status(404).json({ error: 'User not found' });
+            }
+            const token = authManager.generateToken(dbUser);
+            const sanitized = authManager.sanitizeUser(dbUser);
+            return res.json({ success: true, token, user: sanitized });
+        } catch (error) {
+            logger.error('Token refresh error:', error);
+            return res.status(500).json({ error: 'Failed to refresh token' });
         }
     });
 
